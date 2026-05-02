@@ -118,6 +118,8 @@ type SelectionActions = {
 
 const emptyEdges: Edge[] = [];
 const snapGrid: [number, number] = [24, 24];
+const arrangeGap = 48;
+const arrangeRowGap = 64;
 const SelectionActionsContext = React.createContext<SelectionActions | null>(null);
 const supportedFileAccept = [
   ".md",
@@ -324,6 +326,75 @@ function stripRuntimeData(nodes: CanvasNode[]) {
   }));
 }
 
+function estimateNodeSize(node: CanvasNode) {
+  if (node.data.width && node.data.height) {
+    return { width: node.data.width, height: node.data.height + 32 };
+  }
+
+  if (node.data.sourceType === "image" || node.data.sourceType === "video") {
+    return { width: node.data.width ?? 260, height: node.data.height ?? 220 };
+  }
+
+  if (node.data.sourceType === "html") {
+    return { width: node.data.width ?? 520, height: node.data.height ?? 340 };
+  }
+
+  if (node.data.sourceType === "file") {
+    return { width: node.data.width ?? 300, height: node.data.height ?? 230 };
+  }
+
+  return { width: node.data.width ?? 430, height: node.data.height ?? 380 };
+}
+
+function orderedNodesForLayout(nodes: CanvasNode[]) {
+  return [...nodes].sort((a, b) => {
+    const rowDelta = a.position.y - b.position.y;
+    if (Math.abs(rowDelta) > 80) return rowDelta;
+    return a.position.x - b.position.x;
+  });
+}
+
+function measureRows(nodes: CanvasNode[], columns: number) {
+  const rows: CanvasNode[][] = [];
+  for (let index = 0; index < nodes.length; index += columns) {
+    rows.push(nodes.slice(index, index + columns));
+  }
+
+  const rowSizes = rows.map((row) => {
+    const sizes = row.map(estimateNodeSize);
+    return {
+      width: sizes.reduce((sum, size) => sum + size.width, 0) + Math.max(0, row.length - 1) * arrangeGap,
+      height: Math.max(...sizes.map((size) => size.height))
+    };
+  });
+
+  return {
+    rows,
+    width: Math.max(...rowSizes.map((row) => row.width)),
+    height: rowSizes.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * arrangeRowGap,
+    rowSizes
+  };
+}
+
+function chooseSmartColumns(nodes: CanvasNode[]) {
+  const targetRatio = 1.48;
+  const maxColumns = Math.min(nodes.length, Math.max(2, Math.ceil(Math.sqrt(nodes.length)) + 2));
+  let best = { columns: 1, score: Number.POSITIVE_INFINITY };
+
+  for (let columns = 1; columns <= maxColumns; columns += 1) {
+    const measured = measureRows(nodes, columns);
+    const ratio = measured.width / Math.max(1, measured.height);
+    const balancePenalty = Math.abs(targetRatio - ratio);
+    const emptySlots = Math.ceil(nodes.length / columns) * columns - nodes.length;
+    const score = balancePenalty + emptySlots * 0.08 + measured.height / 10000;
+    if (score < best.score) {
+      best = { columns, score };
+    }
+  }
+
+  return best.columns;
+}
+
 async function readText(path?: string) {
   if (!path) return "";
   const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
@@ -480,7 +551,7 @@ function NodeShell({
               action: selectionActions.copySelectedContext
             },
             {
-              label: "Arrange Selection",
+              label: "Smart Arrange",
               icon: <LayoutGrid size={15} />,
               action: selectionActions.arrangeSelected
             },
@@ -1461,50 +1532,71 @@ function CanvasApp() {
   const arrangeSelected = useCallback(() => {
     const selectedNodes = getSelectedNodes();
     if (selectedNodes.length < 2) return;
-    const left = Math.min(...selectedNodes.map((node) => node.position.x));
-    const top = Math.min(...selectedNodes.map((node) => node.position.y));
-    const columns = Math.max(2, Math.ceil(Math.sqrt(selectedNodes.length)));
+    const ordered = orderedNodesForLayout(selectedNodes);
+    const left = Math.min(...ordered.map((node) => node.position.x));
+    const top = Math.min(...ordered.map((node) => node.position.y));
+    const columns = chooseSmartColumns(ordered);
+    const measured = measureRows(ordered, columns);
     const selected = new Set(selectedIds);
-    const order = new Map(selectedNodes.map((node, index) => [node.id, index]));
+    const positions = new Map<string, { x: number; y: number }>();
+    let cursorY = top;
+
+    for (const [rowIndex, row] of measured.rows.entries()) {
+      const rowHeight = measured.rowSizes[rowIndex].height;
+      let cursorX = left;
+      for (const node of row) {
+        const size = estimateNodeSize(node);
+        positions.set(node.id, { x: cursorX, y: cursorY });
+        cursorX += size.width + arrangeGap;
+      }
+      cursorY += rowHeight + arrangeRowGap;
+    }
 
     setNodes((items) => {
       const next = items.map((node) => {
         if (!selected.has(node.id)) return node;
-        const index = order.get(node.id) ?? 0;
+        const position = positions.get(node.id);
+        if (!position) return node;
         return {
           ...node,
-          position: {
-            x: left + (index % columns) * 320,
-            y: top + Math.floor(index / columns) * 260
-          }
+          position
         };
       });
       void persistCanvas(next);
       return next;
     });
+    setStatus("Selection arranged");
   }, [getSelectedNodes, persistCanvas, selectedIds, setNodes]);
 
   const alignSelected = useCallback(
     (axis: "x" | "y") => {
       const selectedNodes = getSelectedNodes();
       if (selectedNodes.length < 2) return;
-      const value = axis === "x" ? selectedNodes[0].position.x : selectedNodes[0].position.y;
+      const ordered = axis === "y" ? [...selectedNodes].sort((a, b) => a.position.x - b.position.x) : [...selectedNodes].sort((a, b) => a.position.y - b.position.y);
+      const anchor = ordered[0];
+      const positions = new Map<string, { x: number; y: number }>();
+      let cursor = axis === "y" ? anchor.position.x : anchor.position.y;
+
+      for (const node of ordered) {
+        const size = estimateNodeSize(node);
+        positions.set(node.id, {
+          x: axis === "y" ? cursor : anchor.position.x,
+          y: axis === "y" ? anchor.position.y : cursor
+        });
+        cursor += (axis === "y" ? size.width : size.height) + arrangeGap;
+      }
+
       setNodes((items) => {
         const selected = new Set(selectedIds);
-        const next = items.map((node) =>
-          selected.has(node.id)
-            ? {
-                ...node,
-                position: {
-                  x: axis === "x" ? value : node.position.x,
-                  y: axis === "y" ? value : node.position.y
-                }
-              }
-            : node
-        );
+        const next = items.map((node) => {
+          if (!selected.has(node.id)) return node;
+          const position = positions.get(node.id);
+          return position ? { ...node, position } : node;
+        });
         void persistCanvas(next);
         return next;
       });
+      setStatus(axis === "y" ? "Selection spaced horizontally" : "Selection spaced vertically");
     },
     [getSelectedNodes, persistCanvas, selectedIds, setNodes]
   );
@@ -1791,6 +1883,9 @@ function CanvasApp() {
           <div className="selection-toolbar">
             <button title="Copy Selection Context" onClick={copySelectedContext}>
               <Clipboard size={16} />
+            </button>
+            <button title="Smart Arrange" onClick={arrangeSelected}>
+              <LayoutGrid size={16} />
             </button>
             <button title="Align Horizontally" onClick={() => alignSelected("y")}>
               <AlignHorizontalJustifyCenter size={16} />
