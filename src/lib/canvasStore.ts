@@ -37,16 +37,31 @@ export type CanvasState = {
   boards: CanvasBoard[];
 };
 
+export type CanvasComment = {
+  id: string;
+  boardId: string;
+  nodeId: string;
+  path?: string;
+  title?: string;
+  quote: string;
+  comment: string;
+  status: "open" | "resolved";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const workspaceRoot = path.resolve(process.env.CANVAS_WORKSPACE ?? process.cwd());
 export const projectRoot = workspaceRoot;
 export const canvasRoot = path.join(workspaceRoot, ".canvas");
 export const filesRoot = path.join(canvasRoot, "files");
 export const boardsRoot = path.join(canvasRoot, "boards");
 export const stateFile = path.join(canvasRoot, "state.json");
+export const commentsFile = path.join(canvasRoot, "comments.json");
 export const canvasFile = path.join(canvasRoot, "canvas.json");
 export const defaultBoardId = "main";
 
 const emptyCanvasDocument: CanvasDocument = { nodes: [], edges: [] };
+const emptyCommentsDocument: { comments: CanvasComment[] } = { comments: [] };
 
 function nowIso() {
   return new Date().toISOString();
@@ -116,6 +131,12 @@ export async function ensureCanvasFolders() {
       const document = board.id === defaultBoardId ? await readLegacyCanvas() : emptyCanvasDocument;
       await writeJsonFile(boardPath(board.id), document);
     }
+  }
+
+  try {
+    await fs.access(commentsFile);
+  } catch {
+    await writeJsonFile(commentsFile, emptyCommentsDocument);
   }
 
   await writeJsonFile(stateFile, state);
@@ -207,6 +228,77 @@ export async function writeCanvas(document: CanvasDocument, boardId?: string) {
   board.updatedAt = timestamp;
   await writeJsonFile(boardPath(board.id), document);
   await writeJsonFile(stateFile, state);
+}
+
+export async function readComments() {
+  await ensureCanvasFolders();
+  return readJsonFile<{ comments: CanvasComment[] }>(commentsFile, emptyCommentsDocument);
+}
+
+export async function listComments(filters: { boardId?: string; nodeId?: string; path?: string; status?: CanvasComment["status"] } = {}) {
+  const document = await readComments();
+  return document.comments.filter((comment) => {
+    if (filters.boardId && comment.boardId !== safeBoardId(filters.boardId)) return false;
+    if (filters.nodeId && comment.nodeId !== filters.nodeId) return false;
+    if (filters.path && comment.path !== filters.path) return false;
+    if (filters.status && comment.status !== filters.status) return false;
+    return true;
+  });
+}
+
+export async function createComment(input: {
+  boardId?: string;
+  nodeId: string;
+  path?: string;
+  title?: string;
+  quote: string;
+  comment: string;
+}) {
+  if (!input.nodeId) {
+    throw new Error("Missing node id for comment.");
+  }
+  if (!input.quote.trim()) {
+    throw new Error("Select text before adding a comment.");
+  }
+  if (!input.comment.trim()) {
+    throw new Error("Comment cannot be empty.");
+  }
+  const state = await readCanvasState();
+  const requestedBoardId = input.boardId ? safeBoardId(input.boardId) : state.currentBoardId;
+  const board = state.boards.find((item) => item.id === requestedBoardId);
+  if (!board) {
+    throw new Error(`No board found for ${input.boardId ?? requestedBoardId}`);
+  }
+  const boardId = board?.id ?? defaultBoardId;
+  const document = await readComments();
+  const timestamp = nowIso();
+  const comment: CanvasComment = {
+    id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    boardId,
+    nodeId: input.nodeId,
+    path: input.path,
+    title: input.title,
+    quote: input.quote.trim(),
+    comment: input.comment.trim(),
+    status: "open",
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  document.comments.push(comment);
+  await writeJsonFile(commentsFile, document);
+  return comment;
+}
+
+export async function resolveComment(commentId: string) {
+  const document = await readComments();
+  const comment = document.comments.find((item) => item.id === commentId);
+  if (!comment) {
+    throw new Error(`No comment found for ${commentId}`);
+  }
+  comment.status = "resolved";
+  comment.updatedAt = nowIso();
+  await writeJsonFile(commentsFile, document);
+  return comment;
 }
 
 export function resolveUserPath(userPath: string) {

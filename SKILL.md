@@ -55,6 +55,7 @@ Collect context:
 ```bash
 mira board current --json
 mira list --json
+mira comments list --json
 mira context <node-id>
 mira read <path>
 ```
@@ -66,4 +67,4 @@ mira read <path>
 mira write <path> "<new content>"
 ```
 
-Prefer JSON output for automation. Create or switch to a board before importing files for a new user task, so unrelated topics do not share nodes. Use `context all` only for small boards. Preserve original images and videos unless the user explicitly asks to overwrite them.
+Prefer JSON output for automation. Create or switch to a board before importing files for a new user task, so unrelated topics do not share nodes. Markdown comments are stored in `.canvas/comments.json`; use `mira comments list --json` to inspect user comments. Use `context all` only for small boards. Preserve original images and videos unless the user explicitly asks to overwrite them.

@@ -27,6 +27,7 @@ import {
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
   ChevronDown,
+  Check,
   Clipboard,
   Copy,
   FileCode2,
@@ -36,6 +37,7 @@ import {
   Layers3,
   LayoutGrid,
   Link2,
+  MessageCircle,
   Plus,
   Save,
   Sparkles,
@@ -83,6 +85,19 @@ type CanvasNode = FlowNode<CanvasNodeData>;
 type CanvasDocument = {
   nodes: CanvasNode[];
   edges?: Edge[];
+};
+
+type CanvasComment = {
+  id: string;
+  boardId: string;
+  nodeId: string;
+  path?: string;
+  title?: string;
+  quote: string;
+  comment: string;
+  status: "open" | "resolved";
+  createdAt: string;
+  updatedAt: string;
 };
 
 type CanvasBoard = {
@@ -255,6 +270,42 @@ async function createMarkdownFile() {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error ?? "Create failed");
   return payload as UploadedFile;
+}
+
+async function fetchComments(boardId: string, nodeId: string) {
+  const response = await fetch(`/api/comments?board=${encodeURIComponent(boardId)}&node=${encodeURIComponent(nodeId)}`);
+  const payload: { comments?: CanvasComment[]; error?: string } = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Could not load comments.");
+  return payload.comments ?? [];
+}
+
+async function createNodeComment(input: {
+  boardId: string;
+  nodeId: string;
+  path?: string;
+  title?: string;
+  quote: string;
+  comment: string;
+}) {
+  const response = await fetch("/api/comments", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  const payload: { comment?: CanvasComment; error?: string } = await response.json();
+  if (!response.ok || !payload.comment) throw new Error(payload.error ?? "Could not add comment.");
+  return payload.comment;
+}
+
+async function resolveNodeComment(id: string) {
+  const response = await fetch("/api/comments", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "resolve", id })
+  });
+  const payload: { comment?: CanvasComment; error?: string } = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Could not resolve comment.");
+  return payload.comment;
 }
 
 function stripRuntimeData(nodes: CanvasNode[]) {
@@ -475,13 +526,17 @@ function NodeShell({
 function MarkdownEditor({
   id,
   data,
+  boardId,
   onBindSave
 }: {
   id: string;
   data: CanvasNodeData;
+  boardId: string;
   onBindSave: (save?: () => Promise<void>) => void;
 }) {
   const [status, setStatus] = useState("");
+  const [comments, setComments] = useState<CanvasComment[]>([]);
+  const [selectedQuote, setSelectedQuote] = useState("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turndown = useMemo(
     () => {
@@ -522,6 +577,24 @@ function MarkdownEditor({
       }
     }
   });
+
+  const refreshComments = useCallback(() => {
+    fetchComments(boardId, id)
+      .then(setComments)
+      .catch((error) => setStatus(error.message));
+  }, [boardId, id]);
+
+  useEffect(() => {
+    refreshComments();
+  }, [refreshComments]);
+
+  const updateSelectedQuote = useCallback(() => {
+    if (!editor) return "";
+    const { from, to } = editor.state.selection;
+    const quote = from === to ? "" : editor.state.doc.textBetween(from, to, "\n").trim();
+    setSelectedQuote(quote);
+    return quote;
+  }, [editor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -590,9 +663,73 @@ function MarkdownEditor({
     [editor]
   );
 
+  const addComment = useCallback(async () => {
+    const quote = updateSelectedQuote();
+    if (!quote) {
+      setStatus("Select text before adding a comment");
+      return;
+    }
+    const text = window.prompt("Comment");
+    if (!text?.trim()) return;
+    setStatus("Adding comment");
+    try {
+      const comment = await createNodeComment({
+        boardId,
+        nodeId: id,
+        path: data.path,
+        title: data.title,
+        quote,
+        comment: text
+      });
+      setComments((items) => items.concat(comment));
+      setStatus("Comment added");
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
+  }, [boardId, data.path, data.title, id, updateSelectedQuote]);
+
+  const resolveComment = useCallback(async (commentId: string) => {
+    setStatus("Resolving comment");
+    try {
+      await resolveNodeComment(commentId);
+      setComments((items) => items.filter((comment) => comment.id !== commentId));
+      setStatus("Comment resolved");
+    } catch (error) {
+      setStatus((error as Error).message);
+    }
+  }, []);
+
   return (
     <>
-      <EditorContent editor={editor} className="markdown-editor" onDragOver={handleAssetDragOver} onDrop={handleAssetDrop} />
+      <div className="comment-tools">
+        <button onClick={addComment} disabled={!selectedQuote} title={selectedQuote ? `Comment on: ${selectedQuote}` : "Select text to comment"}>
+          <MessageCircle size={15} />
+          <span>Add Comment</span>
+        </button>
+        {selectedQuote ? <span>{selectedQuote}</span> : null}
+      </div>
+      <EditorContent
+        editor={editor}
+        className="markdown-editor"
+        onDragOver={handleAssetDragOver}
+        onDrop={handleAssetDrop}
+        onMouseUp={updateSelectedQuote}
+        onKeyUp={updateSelectedQuote}
+      />
+      {comments.length ? (
+        <section className="comments-panel">
+          {comments.map((comment) => (
+            <article key={comment.id} className="comment-card">
+              <blockquote>{comment.quote}</blockquote>
+              <p>{comment.comment}</p>
+              <button onClick={() => void resolveComment(comment.id)} title="Resolve comment">
+                <Check size={13} />
+                <span>Resolve</span>
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : null}
       {status ? <span className="node-status">{status}</span> : null}
     </>
   );
@@ -745,7 +882,7 @@ function ImagePreviewInspector({ node }: { node: CanvasNode }) {
   );
 }
 
-function InspectorContent({ node }: { node: CanvasNode }) {
+function InspectorContent({ node, boardId }: { node: CanvasNode; boardId: string }) {
   const [content, setContent] = useState(node.data.content ?? "");
   const [status, setStatus] = useState("");
 
@@ -774,7 +911,7 @@ function InspectorContent({ node }: { node: CanvasNode }) {
   if (node.data.sourceType === "markdown") {
     return (
       <div className="inspector-editor">
-        <MarkdownEditor id={node.id} data={{ ...node.data, content }} onBindSave={() => undefined} />
+        <MarkdownEditor id={node.id} data={{ ...node.data, content }} boardId={boardId} onBindSave={() => undefined} />
       </div>
     );
   }
@@ -796,11 +933,13 @@ function InspectorContent({ node }: { node: CanvasNode }) {
 
 const InspectorDrawer = memo(function InspectorDrawer({
   node,
+  boardId,
   closing,
   onClose,
   onExitComplete
 }: {
   node: CanvasNode;
+  boardId: string;
   closing?: boolean;
   onClose: () => void;
   onExitComplete?: () => void;
@@ -826,13 +965,13 @@ const InspectorDrawer = memo(function InspectorDrawer({
         </button>
       </header>
       <section className="inspector-body">
-        <InspectorContent node={node} />
+        <InspectorContent node={node} boardId={boardId} />
       </section>
     </aside>
   );
 });
 
-const InspectorHost = memo(function InspectorHost({ node, onClose }: { node: CanvasNode | null; onClose: () => void }) {
+const InspectorHost = memo(function InspectorHost({ node, boardId, onClose }: { node: CanvasNode | null; boardId: string; onClose: () => void }) {
   const [renderedNode, setRenderedNode] = useState<CanvasNode | null>(node);
   const [closing, setClosing] = useState(false);
 
@@ -855,7 +994,7 @@ const InspectorHost = memo(function InspectorHost({ node, onClose }: { node: Can
 
   if (!renderedNode) return null;
 
-  return <InspectorDrawer node={renderedNode} closing={closing} onClose={onClose} onExitComplete={completeExit} />;
+  return <InspectorDrawer node={renderedNode} boardId={boardId} closing={closing} onClose={onClose} onExitComplete={completeExit} />;
 });
 
 const nodeTypes = {
@@ -1646,7 +1785,7 @@ function CanvasApp() {
         <button className="path-bar" title="Click to copy canvas folder path" onClick={copyBottomPath}>
           <span>{canvasFolderPath}</span>
         </button>
-        <InspectorHost node={inspectorNode} onClose={() => setInspectorNodeId(null)} />
+        <InspectorHost node={inspectorNode} boardId={currentBoardId} onClose={() => setInspectorNodeId(null)} />
         <div className="drop-hint">Drop files to add them to the canvas</div>
         {selectedIds.length > 1 ? (
           <div className="selection-toolbar">

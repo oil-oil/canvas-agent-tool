@@ -865,9 +865,88 @@ button {
 
 .inspector-editor .markdown-editor,
 .inspector-editor .tiptap-body {
-  min-height: calc(100vh - 128px);
+  min-height: calc(100vh - 196px);
   max-height: none;
   overflow-x: hidden;
+}
+
+.comment-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.comment-tools button,
+.comment-card button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(201, 184, 160, 0.74);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.44);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.comment-tools button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.comment-tools button:not(:disabled):hover,
+.comment-card button:hover {
+  color: var(--accent);
+}
+
+.comment-tools > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comments-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.comment-card {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border-left: 2px solid rgba(173, 90, 61, 0.32);
+  background: rgba(255, 252, 246, 0.62);
+}
+
+.comment-card blockquote,
+.comment-card p {
+  margin: 0;
+}
+
+.comment-card blockquote {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.comment-card p {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.comment-card button {
+  width: max-content;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .image-preview-pane {

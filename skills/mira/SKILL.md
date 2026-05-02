@@ -93,11 +93,12 @@ Use JSON output for automation:
 ```bash
 mira board current --json
 mira list --json
+mira comments list --json
 mira context <node-id>
 mira read <path>
 ```
 
-For each new user task, create or switch to a dedicated board before importing files. This keeps unrelated topics from leaking into `list`, `context all`, and the visible UI. Use `context all` only when the current board is small. For large boards, list nodes first, choose relevant node ids, then fetch context one by one.
+For each new user task, create or switch to a dedicated board before importing files. This keeps unrelated topics from leaking into `list`, `context all`, and the visible UI. Markdown comments are stored in `.canvas/comments.json`; use `mira comments list --json`, `mira comments node <node-id> --json`, or `mira comments file <path> --json` when the user asks about comments. Use `context all` only when the current board is small. For large boards, list nodes first, choose relevant node ids, then fetch context one by one.
 
 Expected context shape:
 
@@ -112,6 +113,9 @@ summary:
 
 ## Content
 Exact text when useful. For images and videos, include the file path and relevant visible details requested by the user.
+
+## Comments
+Open Markdown comments when present, including `comment_id`, `quote`, and `comment`.
 ```
 
 ## Edit Source Files

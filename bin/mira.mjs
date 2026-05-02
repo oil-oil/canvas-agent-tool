@@ -14,6 +14,7 @@ const dropsRoot = path.join(filesRoot, "drops");
 const notesRoot = path.join(filesRoot, "notes");
 const boardsRoot = path.join(canvasRoot, "boards");
 const stateFile = path.join(canvasRoot, "state.json");
+const commentsFile = path.join(canvasRoot, "comments.json");
 const canvasFile = path.join(canvasRoot, "canvas.json");
 const defaultBoardId = "main";
 const renderableTypes = new Set(["markdown", "html", "image", "video"]);
@@ -32,6 +33,10 @@ Commands:
   board current [--json]       Print the current board
   board create <title> [--json] Create and switch to a board
   board use <id> [--json]      Switch to a board
+  comments list [--json]       List open comments on the current board
+  comments node <id> [--json]  List comments for a node
+  comments file <path> [--json] List comments for a file
+  comments resolve <id> [--json] Resolve a comment
   list [--json]                List canvas nodes
   files [--json]               List files under .canvas/files
   import <file...> [--json]    Copy previewable files into the canvas and add nodes
@@ -89,7 +94,7 @@ function withoutFlags(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith("--")) {
-      if (["--board", "--port"].includes(arg)) index += 1;
+      if (["--board", "--port", "--status"].includes(arg)) index += 1;
       continue;
     }
     values.push(arg);
@@ -137,6 +142,12 @@ async function ensureCanvas() {
       const document = board.id === defaultBoardId ? await readJson(canvasFile, { nodes: [], edges: [] }) : { nodes: [], edges: [] };
       await writeJson(boardFile(board.id), document);
     }
+  }
+
+  try {
+    await fs.access(commentsFile);
+  } catch {
+    await writeJson(commentsFile, { comments: [] });
   }
 
   await writeJson(stateFile, state);
@@ -236,6 +247,32 @@ async function currentBoard(args = []) {
   const state = await readState();
   const boardId = await resolveBoardId(args);
   return state.boards.find((board) => board.id === boardId) ?? state.boards[0];
+}
+
+async function readComments() {
+  await ensureCanvas();
+  return readJson(commentsFile, { comments: [] });
+}
+
+async function writeComments(document) {
+  await ensureCanvas();
+  await writeJson(commentsFile, document);
+}
+
+async function listComments(args = [], filters = {}) {
+  const board = await currentBoard(args);
+  const status = getOptionValue(args, "--status") ?? "open";
+  const document = await readComments();
+  return {
+    board,
+    comments: document.comments.filter((comment) => {
+      if (comment.boardId !== board.id) return false;
+      if (status !== "all" && comment.status !== status) return false;
+      if (filters.nodeId && comment.nodeId !== filters.nodeId) return false;
+      if (filters.path && comment.path !== filters.path) return false;
+      return true;
+    })
+  };
 }
 
 async function uniquePath(directory, name) {
@@ -483,6 +520,58 @@ async function boardCommand(args) {
   throw new Error(`Unknown board command: ${action}`);
 }
 
+async function commentsCommand(args) {
+  const [action, ...rest] = args;
+  const json = hasFlag(args, "--json");
+
+  if (!action || action === "list") {
+    const result = await listComments(args);
+    if (json) return printJson(result);
+    for (const comment of result.comments) {
+      console.log(`${comment.id}\t${comment.nodeId}\t${comment.title ?? ""}\t${comment.quote}\t${comment.comment}`);
+    }
+    return;
+  }
+
+  if (action === "node") {
+    const [nodeId] = withoutFlags(rest);
+    if (!nodeId) throw new Error("Provide a node id.");
+    const result = await listComments(args, { nodeId });
+    if (json) return printJson(result);
+    for (const comment of result.comments) {
+      console.log(`${comment.id}\t${comment.quote}\t${comment.comment}`);
+    }
+    return;
+  }
+
+  if (action === "file") {
+    const [filePath] = withoutFlags(rest);
+    if (!filePath) throw new Error("Provide a file path.");
+    const result = await listComments(args, { path: resolveUserPath(filePath) });
+    if (json) return printJson(result);
+    for (const comment of result.comments) {
+      console.log(`${comment.id}\t${comment.nodeId}\t${comment.quote}\t${comment.comment}`);
+    }
+    return;
+  }
+
+  if (action === "resolve") {
+    const [commentId] = withoutFlags(rest);
+    if (!commentId) throw new Error("Provide a comment id.");
+    const document = await readComments();
+    const comment = document.comments.find((item) => item.id === commentId);
+    if (!comment) throw new Error(`No comment found for ${commentId}`);
+    comment.status = "resolved";
+    comment.updatedAt = new Date().toISOString();
+    await writeComments(document);
+    if (json) return printJson({ comment });
+    console.log(`${comment.id}\tresolved`);
+    return;
+  }
+
+  throw new Error(`Unknown comments command: ${action}`);
+}
+
 async function status(args) {
   const json = hasFlag(args, "--json");
   const document = await readCanvas(args);
@@ -497,6 +586,7 @@ async function status(args) {
     boardsRoot,
     filesRoot,
     canvasFile,
+    commentsFile,
     stateFile,
     board,
     boards: state.boards,
@@ -524,11 +614,15 @@ async function contextFor(args) {
   const board = await currentBoard(args);
   const targets = id === "all" ? document.nodes : document.nodes.filter((item) => item.id === id);
   if (!targets.length) throw new Error(`No node found for ${id}`);
+  const commentsDocument = await readComments();
   for (const node of targets) {
     let content = node.data.content ?? "";
     if (!content && node.data.path && ["markdown", "html", "file"].includes(node.data.sourceType)) {
       content = await fs.readFile(node.data.path, "utf8").catch(() => "");
     }
+    const comments = commentsDocument.comments.filter(
+      (comment) => comment.boardId === board.id && comment.status === "open" && (comment.nodeId === node.id || (node.data.path && comment.path === node.data.path))
+    );
     console.log(
       [
         "# Canvas Context",
@@ -542,7 +636,9 @@ async function contextFor(args) {
         node.data.summary ? `summary: ${node.data.summary}` : "",
         "",
         "## Content",
-        content || "(This node mainly provides a media path or canvas metadata.)"
+        content || "(This node mainly provides a media path or canvas metadata.)",
+        comments.length ? "\n## Comments" : "",
+        ...comments.map((comment) => [`comment_id: ${comment.id}`, `quote: ${comment.quote}`, `comment: ${comment.comment}`].join("\n"))
       ]
         .filter(Boolean)
         .join("\n")
@@ -589,6 +685,7 @@ async function main() {
   if (command === "open") return openCanvas(args);
   if (command === "status") return status(args);
   if (command === "board") return boardCommand(args);
+  if (command === "comments") return commentsCommand(args);
   if (command === "list") return listNodes(args);
   if (command === "files") return listFiles(args);
   if (command === "import") return importFiles(args);
