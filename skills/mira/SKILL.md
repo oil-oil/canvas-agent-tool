@@ -7,17 +7,18 @@ description: Use this skill whenever the user wants an Agent to preview, organiz
 
 Use Mira when the user wants files to become visible context. Mira is local-first: the installed app provides the CLI and UI, while the current workspace stores layout and files under `.canvas/`.
 
-## Install Mira
+## First Try Mira
 
-If Mira is not installed, install it from GitHub:
+Start by trying the CLI from the workspace where `.canvas/` should live:
+
+```bash
+mira status --json
+```
+
+If the command is missing, install it from GitHub, then retry:
 
 ```bash
 npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
-```
-
-Then verify:
-
-```bash
 mira status --json
 ```
 

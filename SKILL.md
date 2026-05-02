@@ -5,10 +5,17 @@ description: Use this skill whenever the user wants an Agent to preview, organiz
 
 # Mira
 
-Install Mira from GitHub if needed:
+First try Mira in the current workspace:
+
+```bash
+mira status --json
+```
+
+If the command is missing, install Mira from GitHub, then retry:
 
 ```bash
 npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
+mira status --json
 ```
 
 Use Mira from the workspace where `.canvas/` should live:
@@ -16,7 +23,6 @@ Use Mira from the workspace where `.canvas/` should live:
 ```bash
 mira init
 mira board create "<short task name>" --json
-mira status --json
 mira serve --port 3020
 ```
 
