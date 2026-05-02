@@ -23,8 +23,24 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { marked } from "marked";
 import TurndownService from "turndown";
-import { AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Clipboard, Copy, FilePlus2, LayoutGrid, Plus, Save, Trash2, X } from "lucide-react";
-import { FileHtml, FileMd, FileText, ImageSquare, Path, Sparkle, VideoCamera } from "@phosphor-icons/react";
+import {
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
+  Clipboard,
+  Copy,
+  FileCode2,
+  FileImage,
+  FilePlus2,
+  FileText,
+  LayoutGrid,
+  Link2,
+  Plus,
+  Save,
+  Sparkles,
+  Trash2,
+  Video,
+  X
+} from "lucide-react";
 import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type SourceType = "markdown" | "html" | "image" | "video" | "prompt" | "file";
@@ -121,12 +137,12 @@ const supportedDropExtensions = new Set([
 ]);
 
 const sourceIcons: Record<SourceType, React.ReactNode> = {
-  markdown: <FileMd size={19} weight="duotone" />,
-  html: <FileHtml size={19} weight="duotone" />,
-  image: <ImageSquare size={19} weight="duotone" />,
-  video: <VideoCamera size={19} weight="duotone" />,
-  prompt: <Sparkle size={19} weight="duotone" />,
-  file: <FileText size={19} weight="duotone" />
+  markdown: <FileText size={19} />,
+  html: <FileCode2 size={19} />,
+  image: <FileImage size={19} />,
+  video: <Video size={19} />,
+  prompt: <Sparkles size={19} />,
+  file: <FileText size={19} />
 };
 
 function rawUrl(path?: string) {
@@ -318,7 +334,7 @@ function defaultMenuItems(id: string, data: CanvasNodeData, extra: MenuItem[] = 
     },
     {
       label: "Copy Path Option+Command+C / Ctrl+Alt+C",
-      icon: <Path size={15} weight="duotone" />,
+      icon: <Link2 size={15} />,
       action: () => data.onCopyPath?.(id)
     },
     {
@@ -395,7 +411,7 @@ function NodeShell({
             },
             {
               label: "Copy Selection Paths",
-              icon: <Path size={15} weight="duotone" />,
+              icon: <Link2 size={15} />,
               action: selectionActions.copySelectedPath
             },
             {
@@ -638,7 +654,7 @@ const HtmlNode = memo(function HtmlNode({ id, data, selected }: NodeProps<Canvas
       menuItems={[
         {
           label: sourceMode ? "Preview HTML" : "Edit Source",
-          icon: <FileHtml size={15} weight="duotone" />,
+          icon: <FileCode2 size={15} />,
           action: () => setSourceMode((value) => !value)
         },
         {
@@ -676,7 +692,7 @@ const VideoNode = memo(function VideoNode({ id, data, selected }: NodeProps<Canv
         <video className="media-video nowheel nodrag nopan" src={rawUrl(data.path)} controls preload="none" />
       ) : (
         <button className="media-placeholder video-placeholder" onMouseEnter={() => setArmed(true)} onFocus={() => setArmed(true)}>
-          <VideoCamera size={34} weight="duotone" />
+          <Video size={34} />
           <span>{data.title}</span>
         </button>
       )}
@@ -897,7 +913,7 @@ const CanvasToolbar = memo(function CanvasToolbar({
             <span>Add Files</span>
           </button>
           <button onClick={addMarkdown}>
-            <FileMd size={16} weight="duotone" />
+            <FileText size={16} />
             <span>New Markdown</span>
           </button>
         </div>
