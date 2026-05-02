@@ -1,10 +1,10 @@
 {
-  "skill_name": "canvas-agent-cli",
+  "skill_name": "mira",
   "evals": [
     {
       "id": 1,
       "prompt": "Put design-spec.md and a few screenshots from ~/Downloads onto the canvas for preview, then open the local service so I can view them.",
-      "expected_output": "Uses the canvas CLI, imports supported Markdown/image files as nodes, starts the service on port 3020, and reports the preview URL.",
+      "expected_output": "Uses the mira CLI, imports supported Markdown/image files as nodes, starts the service on port 3020, and reports the preview URL.",
       "files": []
     },
     {

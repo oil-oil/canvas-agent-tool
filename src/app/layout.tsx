@@ -3,7 +3,7 @@ import "./globals.css";
 import "@xyflow/react/dist/style.css";
 
 export const metadata: Metadata = {
-  title: "Canvas Agent Tool",
+  title: "Mira",
   description: "A local visual context canvas for files and prompts."
 };
 

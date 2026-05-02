@@ -1,22 +1,23 @@
 {
-  "name": "canvas-agent-tool",
+  "name": "mira",
   "version": "0.1.0",
-  "description": "Local-first visual canvas CLI for agents to preview Markdown, HTML, images, and videos.",
+  "description": "A local-first visual canvas for agents to preview Markdown, HTML, images, and videos.",
   "license": "MIT",
   "type": "module",
-  "homepage": "https://github.com/oil-oil/canvas-agent-tool#readme",
+  "homepage": "https://github.com/oil-oil/mira#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oil-oil/canvas-agent-tool.git"
+    "url": "git+https://github.com/oil-oil/mira.git"
   },
   "bugs": {
-    "url": "https://github.com/oil-oil/canvas-agent-tool/issues"
+    "url": "https://github.com/oil-oil/mira/issues"
   },
   "bin": {
-    "canvas-agent": "./bin/canvas.mjs",
-    "canvas": "./bin/canvas.mjs"
+    "mira": "./bin/mira.mjs"
   },
   "files": [
+    "SKILL.md",
+    "assets",
     "bin",
     "src",
     "samples",

@@ -1,6 +1,6 @@
 # Security
 
-Canvas Agent Tool is intended for local development and local agent workflows.
+Mira is intended for local development and local agent workflows.
 
 ## Local Service
 

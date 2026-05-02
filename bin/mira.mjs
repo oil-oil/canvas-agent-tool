@@ -16,8 +16,8 @@ const canvasFile = path.join(canvasRoot, "canvas.json");
 const renderableTypes = new Set(["markdown", "html", "image", "video"]);
 
 function usage() {
-  const invokedName = path.basename(process.argv[1] ?? "canvas-agent");
-  const commandName = invokedName === "canvas.mjs" ? "canvas-agent" : invokedName;
+  const invokedName = path.basename(process.argv[1] ?? "mira");
+  const commandName = invokedName === "mira.mjs" ? "mira" : invokedName;
   console.log(`${commandName} <command>
 
 Commands:

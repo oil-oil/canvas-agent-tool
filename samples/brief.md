@@ -1,4 +1,4 @@
-# Canvas Agent Tool
+# Mira
 
 This canvas service turns files into movable, editable, annotatable nodes with copyable context.
 

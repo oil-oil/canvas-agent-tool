@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Canvas Agent Tool.
+Thanks for helping improve Mira.
 
 ## Development Setup
 
