@@ -18,6 +18,14 @@ const commentsFile = path.join(canvasRoot, "comments.json");
 const canvasFile = path.join(canvasRoot, "canvas.json");
 const defaultBoardId = "main";
 const renderableTypes = new Set(["markdown", "html", "image", "video"]);
+const defaultNodeSizes = {
+  markdown: { width: 520, height: 460 },
+  html: { width: 720, height: 450 },
+  image: { width: 260, height: 220 },
+  video: { width: 300, height: 210 },
+  prompt: { width: 420, height: 320 },
+  file: { width: 300, height: 230 }
+};
 
 function usage() {
   const invokedName = path.basename(process.argv[1] ?? "mira");
@@ -307,8 +315,8 @@ async function uniqueLinkPath(name) {
 
 function nextNodePosition(index) {
   return {
-    x: 96 + (index % 4) * 320,
-    y: 96 + Math.floor(index / 4) * 280
+    x: 96 + (index % 3) * 360,
+    y: 96 + Math.floor(index / 3) * 320
   };
 }
 
@@ -323,7 +331,8 @@ function nodeForFile(filePath, index, prefix = "cli") {
       path: filePath,
       sourceType,
       summary: filePath,
-      preview: sourceType === "image" || sourceType === "video"
+      preview: sourceType === "image" || sourceType === "video",
+      ...(sourceType === "markdown" || sourceType === "html" ? defaultNodeSizes[sourceType] : {})
     }
   };
 }

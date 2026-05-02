@@ -120,6 +120,14 @@ const emptyEdges: Edge[] = [];
 const snapGrid: [number, number] = [24, 24];
 const arrangeGap = 48;
 const arrangeRowGap = 64;
+const defaultNodeSizes: Record<SourceType, { width: number; height: number }> = {
+  markdown: { width: 520, height: 460 },
+  html: { width: 720, height: 450 },
+  image: { width: 260, height: 220 },
+  video: { width: 300, height: 210 },
+  prompt: { width: 420, height: 320 },
+  file: { width: 300, height: 230 }
+};
 const SelectionActionsContext = React.createContext<SelectionActions | null>(null);
 const supportedFileAccept = [
   ".md",
@@ -331,19 +339,7 @@ function estimateNodeSize(node: CanvasNode) {
     return { width: node.data.width, height: node.data.height + 32 };
   }
 
-  if (node.data.sourceType === "image" || node.data.sourceType === "video") {
-    return { width: node.data.width ?? 260, height: node.data.height ?? 220 };
-  }
-
-  if (node.data.sourceType === "html") {
-    return { width: node.data.width ?? 520, height: node.data.height ?? 340 };
-  }
-
-  if (node.data.sourceType === "file") {
-    return { width: node.data.width ?? 300, height: node.data.height ?? 230 };
-  }
-
-  return { width: node.data.width ?? 430, height: node.data.height ?? 380 };
+  return defaultNodeSizes[node.data.sourceType];
 }
 
 function orderedNodesForLayout(nodes: CanvasNode[]) {

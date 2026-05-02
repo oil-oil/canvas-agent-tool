@@ -448,9 +448,9 @@ button {
 }
 
 .markdown {
-  width: 430px;
-  min-height: 320px;
-  max-height: 520px;
+  width: 520px;
+  min-height: 360px;
+  max-height: 560px;
   overflow: hidden;
 }
 
@@ -460,7 +460,8 @@ button {
 }
 
 .html-node {
-  width: 520px;
+  width: 720px;
+  height: 450px;
   min-height: unset;
   padding: 10px;
 }
