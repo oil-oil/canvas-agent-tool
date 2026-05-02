@@ -12,7 +12,10 @@ const canvasRoot = path.join(workspaceRoot, ".canvas");
 const filesRoot = path.join(canvasRoot, "files");
 const dropsRoot = path.join(filesRoot, "drops");
 const notesRoot = path.join(filesRoot, "notes");
+const boardsRoot = path.join(canvasRoot, "boards");
+const stateFile = path.join(canvasRoot, "state.json");
 const canvasFile = path.join(canvasRoot, "canvas.json");
+const defaultBoardId = "main";
 const renderableTypes = new Set(["markdown", "html", "image", "video"]);
 
 function usage() {
@@ -25,6 +28,10 @@ Commands:
   serve [--port 3020]          Start the canvas service
   open [--port 3020]           Open the canvas service in the browser
   status [--json]              Print canvas paths and node counts
+  board list [--json]          List boards
+  board current [--json]       Print the current board
+  board create <title> [--json] Create and switch to a board
+  board use <id> [--json]      Switch to a board
   list [--json]                List canvas nodes
   files [--json]               List files under .canvas/files
   import <file...> [--json]    Copy previewable files into the canvas and add nodes
@@ -56,12 +63,38 @@ function safeName(input) {
   return input.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-") || `file-${Date.now()}`;
 }
 
+function safeBoardId(input) {
+  return (
+    input
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 72) || `board-${Date.now()}`
+  );
+}
+
 function hasFlag(args, flag) {
   return args.includes(flag);
 }
 
+function getOptionValue(args, flag) {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
 function withoutFlags(args) {
-  return args.filter((arg) => !arg.startsWith("--"));
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith("--")) {
+      if (["--board", "--port"].includes(arg)) index += 1;
+      continue;
+    }
+    values.push(arg);
+  }
+  return values;
 }
 
 function printJson(value) {
@@ -75,11 +108,54 @@ function isRenderable(filePath) {
 async function ensureCanvas() {
   await fs.mkdir(dropsRoot, { recursive: true });
   await fs.mkdir(notesRoot, { recursive: true });
-  try {
-    await fs.access(canvasFile);
-  } catch {
-    await fs.writeFile(canvasFile, `${JSON.stringify({ nodes: [], edges: [] }, null, 2)}\n`, "utf8");
+  await fs.mkdir(boardsRoot, { recursive: true });
+
+  let state = await readJson(stateFile, null);
+  const timestamp = new Date().toISOString();
+  if (!state || !Array.isArray(state.boards) || !state.boards.length) {
+    state = {
+      currentBoardId: defaultBoardId,
+      boards: [
+        {
+          id: defaultBoardId,
+          title: "Main",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
+      ]
+    };
   }
+
+  if (!state.currentBoardId || !state.boards.some((board) => board.id === state.currentBoardId)) {
+    state.currentBoardId = state.boards[0]?.id ?? defaultBoardId;
+  }
+
+  for (const board of state.boards) {
+    try {
+      await fs.access(boardFile(board.id));
+    } catch {
+      const document = board.id === defaultBoardId ? await readJson(canvasFile, { nodes: [], edges: [] }) : { nodes: [], edges: [] };
+      await writeJson(boardFile(board.id), document);
+    }
+  }
+
+  await writeJson(stateFile, state);
+}
+
+async function readJson(filePath, fallback) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeJson(filePath, value) {
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function boardFile(boardId) {
+  return path.join(boardsRoot, `${safeBoardId(boardId)}.json`);
 }
 
 function resolveUserPath(userPath) {
@@ -126,14 +202,40 @@ async function assertAllowedPath(targetPath) {
   return resolved;
 }
 
-async function readCanvas() {
+async function readState() {
   await ensureCanvas();
-  return JSON.parse(await fs.readFile(canvasFile, "utf8"));
+  return readJson(stateFile, { currentBoardId: defaultBoardId, boards: [] });
 }
 
-async function writeCanvas(document) {
+async function resolveBoardId(args) {
+  const requested = getOptionValue(args, "--board");
+  const state = await readState();
+  const boardId = safeBoardId(requested ?? state.currentBoardId);
+  if (!state.boards.some((board) => board.id === boardId)) {
+    throw new Error(`No board found for ${requested ?? boardId}`);
+  }
+  return boardId;
+}
+
+async function readCanvas(args = []) {
+  const boardId = await resolveBoardId(args);
+  return readJson(boardFile(boardId), { nodes: [], edges: [] });
+}
+
+async function writeCanvas(document, args = []) {
   await ensureCanvas();
-  await fs.writeFile(canvasFile, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  const state = await readState();
+  const boardId = await resolveBoardId(args);
+  const board = state.boards.find((item) => item.id === boardId);
+  if (board) board.updatedAt = new Date().toISOString();
+  await writeJson(boardFile(boardId), document);
+  await writeJson(stateFile, state);
+}
+
+async function currentBoard(args = []) {
+  const state = await readState();
+  const boardId = await resolveBoardId(args);
+  return state.boards.find((board) => board.id === boardId) ?? state.boards[0];
 }
 
 async function uniquePath(directory, name) {
@@ -193,7 +295,7 @@ async function importFiles(args) {
   const json = hasFlag(args, "--json");
   const paths = withoutFlags(args);
   if (!paths.length) throw new Error("Provide at least one file path to import.");
-  const document = await readCanvas();
+  const document = await readCanvas(args);
   const start = document.nodes.length;
   const nodes = [];
 
@@ -209,8 +311,8 @@ async function importFiles(args) {
 
   document.nodes.push(...nodes);
   document.edges = document.edges ?? [];
-  await writeCanvas(document);
-  const result = { imported: nodes.length, nodes };
+  await writeCanvas(document, args);
+  const result = { board: await currentBoard(args), imported: nodes.length, nodes };
   if (json) printJson(result);
   else {
     for (const node of nodes) console.log(`${node.id}\t${node.data.sourceType}\t${node.data.path}`);
@@ -221,7 +323,7 @@ async function addFiles(args) {
   const json = hasFlag(args, "--json");
   const paths = withoutFlags(args);
   if (!paths.length) throw new Error("Provide at least one file path to add to the canvas.");
-  const document = await readCanvas();
+  const document = await readCanvas(args);
   const start = document.nodes.length;
   const nodes = [];
 
@@ -235,8 +337,8 @@ async function addFiles(args) {
 
   document.nodes.push(...nodes);
   document.edges = document.edges ?? [];
-  await writeCanvas(document);
-  const result = { added: nodes.length, nodes };
+  await writeCanvas(document, args);
+  const result = { board: await currentBoard(args), added: nodes.length, nodes };
   if (json) printJson(result);
   else {
     for (const node of nodes) console.log(`${node.id}\t${node.data.sourceType}\t${node.data.path}`);
@@ -251,12 +353,12 @@ async function createMarkdown(args) {
   await ensureCanvas();
   const target = await uniquePath(notesRoot, fileName);
   await fs.writeFile(target, "", "utf8");
-  const document = await readCanvas();
+  const document = await readCanvas(args);
   const node = nodeForFile(target, document.nodes.length, "cli-note");
   document.nodes.push(node);
   document.edges = document.edges ?? [];
-  await writeCanvas(document);
-  const result = { created: true, node, path: target };
+  await writeCanvas(document, args);
+  const result = { board: await currentBoard(args), created: true, node, path: target };
   if (json) printJson(result);
   else console.log(`${node.id}\tmarkdown\t${target}`);
 }
@@ -277,8 +379,8 @@ async function linkPath(args) {
 
 async function listNodes(args) {
   const json = hasFlag(args, "--json");
-  const document = await readCanvas();
-  if (json) return printJson({ nodes: document.nodes });
+  const document = await readCanvas(args);
+  if (json) return printJson({ board: await currentBoard(args), nodes: document.nodes });
   for (const node of document.nodes) {
     console.log(`${node.id}\t${node.data.sourceType}\t${node.data.title}\t${node.data.path ?? ""}`);
   }
@@ -323,17 +425,81 @@ async function listFiles(args) {
   }
 }
 
+async function boardCommand(args) {
+  const [action, ...rest] = args;
+  const json = hasFlag(args, "--json");
+  const state = await readState();
+
+  if (!action || action === "list") {
+    if (json) return printJson(state);
+    for (const board of state.boards) {
+      const marker = board.id === state.currentBoardId ? "*" : " ";
+      console.log(`${marker}\t${board.id}\t${board.title}`);
+    }
+    return;
+  }
+
+  if (action === "current") {
+    const board = state.boards.find((item) => item.id === state.currentBoardId) ?? state.boards[0];
+    if (json) return printJson({ board });
+    if (board) console.log(`${board.id}\t${board.title}`);
+    return;
+  }
+
+  if (action === "create") {
+    const title = withoutFlags(rest).join(" ").trim();
+    if (!title) throw new Error("Provide a board title.");
+    const baseId = safeBoardId(title);
+    let id = baseId;
+    let index = 2;
+    while (state.boards.some((board) => board.id === id)) {
+      id = `${baseId}-${index}`;
+      index += 1;
+    }
+    const timestamp = new Date().toISOString();
+    const board = { id, title, createdAt: timestamp, updatedAt: timestamp };
+    state.boards.push(board);
+    state.currentBoardId = id;
+    await writeJson(boardFile(id), { nodes: [], edges: [] });
+    await writeJson(stateFile, state);
+    if (json) return printJson({ board, boards: state.boards, currentBoardId: state.currentBoardId });
+    console.log(`${board.id}\t${board.title}`);
+    return;
+  }
+
+  if (action === "use") {
+    const [requested] = withoutFlags(rest);
+    if (!requested) throw new Error("Provide a board id.");
+    const boardId = safeBoardId(requested);
+    const board = state.boards.find((item) => item.id === boardId);
+    if (!board) throw new Error(`No board found for ${requested}`);
+    state.currentBoardId = board.id;
+    await writeJson(stateFile, state);
+    if (json) return printJson({ board, boards: state.boards, currentBoardId: state.currentBoardId });
+    console.log(`${board.id}\t${board.title}`);
+    return;
+  }
+
+  throw new Error(`Unknown board command: ${action}`);
+}
+
 async function status(args) {
   const json = hasFlag(args, "--json");
-  const document = await readCanvas();
+  const document = await readCanvas(args);
   const files = await scanFiles();
+  const state = await readState();
+  const board = await currentBoard(args);
   const result = {
     appRoot,
     workspaceRoot,
     projectRoot,
     canvasRoot,
+    boardsRoot,
     filesRoot,
     canvasFile,
+    stateFile,
+    board,
+    boards: state.boards,
     serviceUrl: "http://localhost:3020",
     nodes: document.nodes.length,
     files: files.length
@@ -343,6 +509,7 @@ async function status(args) {
     console.log(`app\t${appRoot}`);
     console.log(`workspace\t${workspaceRoot}`);
     console.log(`canvas\t${canvasRoot}`);
+    console.log(`board\t${board.id}\t${board.title}`);
     console.log(`files\t${filesRoot}`);
     console.log(`service\t${result.serviceUrl}`);
     console.log(`nodes\t${result.nodes}`);
@@ -350,9 +517,11 @@ async function status(args) {
   }
 }
 
-async function contextFor(id) {
+async function contextFor(args) {
+  const [id] = withoutFlags(args);
   if (!id) throw new Error("Provide a node id.");
-  const document = await readCanvas();
+  const document = await readCanvas(args);
+  const board = await currentBoard(args);
   const targets = id === "all" ? document.nodes : document.nodes.filter((item) => item.id === id);
   if (!targets.length) throw new Error(`No node found for ${id}`);
   for (const node of targets) {
@@ -364,6 +533,8 @@ async function contextFor(id) {
       [
         "# Canvas Context",
         "",
+        `board_id: ${board.id}`,
+        `board_title: ${board.title}`,
         `node_id: ${node.id}`,
         `type: ${node.data.sourceType}`,
         `title: ${node.data.title}`,
@@ -417,13 +588,14 @@ async function main() {
   if (command === "serve") return serve(args);
   if (command === "open") return openCanvas(args);
   if (command === "status") return status(args);
+  if (command === "board") return boardCommand(args);
   if (command === "list") return listNodes(args);
   if (command === "files") return listFiles(args);
   if (command === "import") return importFiles(args);
   if (command === "add") return addFiles(args);
   if (command === "markdown") return createMarkdown(args);
   if (command === "link") return linkPath(args);
-  if (command === "context") return contextFor(args[0]);
+  if (command === "context") return contextFor(args);
   if (command === "read") return console.log(await fs.readFile(await assertAllowedPath(args[0]), "utf8"));
   if (command === "write") return fs.writeFile(await assertAllowedPath(args[0]), args.slice(1).join(" "), "utf8");
 

@@ -26,12 +26,14 @@ import TurndownService from "turndown";
 import {
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  ChevronDown,
   Clipboard,
   Copy,
   FileCode2,
   FileImage,
   FilePlus2,
   FileText,
+  Layers3,
   LayoutGrid,
   Link2,
   Plus,
@@ -81,6 +83,13 @@ type CanvasNode = FlowNode<CanvasNodeData>;
 type CanvasDocument = {
   nodes: CanvasNode[];
   edges?: Edge[];
+};
+
+type CanvasBoard = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type SelectionActions = {
@@ -927,6 +936,9 @@ function CanvasApp() {
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<CanvasNode>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null);
+  const [boards, setBoards] = useState<CanvasBoard[]>([]);
+  const [currentBoardId, setCurrentBoardId] = useState("main");
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false);
   const [status, setStatus] = useState("Loading canvas");
   const [canvasFolderPath, setCanvasFolderPath] = useState(".canvas");
   const [dragActive, setDragActive] = useState(false);
@@ -935,11 +947,16 @@ function CanvasApp() {
   const nodesRef = useRef<CanvasNode[]>([]);
   const wheelOwnerRef = useRef<"canvas" | "content" | null>(null);
   const wheelResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentBoardIdRef = useRef(currentBoardId);
   const { screenToFlowPosition, setCenter, fitView } = useReactFlow<CanvasNode, Edge>();
 
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+
+  useEffect(() => {
+    currentBoardIdRef.current = currentBoardId;
+  }, [currentBoardId]);
 
   const getSelectedNodes = useCallback(() => {
     const selected = new Set(selectedIds);
@@ -947,6 +964,7 @@ function CanvasApp() {
   }, [selectedIds]);
 
   const inspectorNode = useMemo(() => nodes.find((node) => node.id === inspectorNodeId) ?? null, [inspectorNodeId, nodes]);
+  const currentBoard = useMemo(() => boards.find((board) => board.id === currentBoardId) ?? null, [boards, currentBoardId]);
 
   useEffect(() => {
     if (inspectorNodeId && !inspectorNode) {
@@ -956,7 +974,7 @@ function CanvasApp() {
 
   const persistCanvas = useCallback(
     async (nextNodes = nodesRef.current) => {
-      await fetch("/api/canvas", {
+      await fetch(`/api/canvas?board=${encodeURIComponent(currentBoardIdRef.current)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ nodes: stripRuntimeData(nextNodes), edges: [] })
@@ -1138,21 +1156,79 @@ function CanvasApp() {
     [copyNodeContent, copyNodeContext, copyNodePath, deleteNode, duplicateNode, resizeNode, updateNode]
   );
 
+  const loadBoards = useCallback(async () => {
+    const response = await fetch("/api/boards");
+    const payload: { boards?: CanvasBoard[]; currentBoardId?: string } = await response.json();
+    const nextBoards = payload.boards ?? [];
+    setBoards(nextBoards);
+    if (payload.currentBoardId) {
+      setCurrentBoardId(payload.currentBoardId);
+    }
+    return payload.currentBoardId ?? nextBoards[0]?.id ?? "main";
+  }, []);
+
+  const loadCanvas = useCallback(
+    async (boardId: string) => {
+      setStatus("Loading board");
+      const response = await fetch(`/api/canvas?board=${encodeURIComponent(boardId)}`);
+      const document: CanvasDocument = await response.json();
+      const nextNodes = document.nodes ?? [];
+      setNodes(attachRuntime(nextNodes));
+      setSelectedIds([]);
+      setInspectorNodeId(null);
+      setStatus("Board ready");
+    },
+    [attachRuntime, setNodes]
+  );
+
   useEffect(() => {
     fetch("/api/status")
       .then((response) => response.json())
       .then((payload: { canvasRoot?: string }) => setCanvasFolderPath(payload.canvasRoot ?? ".canvas"))
       .catch(() => setCanvasFolderPath(".canvas"));
 
-    fetch("/api/canvas")
-      .then((response) => response.json())
-      .then((document: CanvasDocument) => {
-        const nextNodes = document.nodes ?? [];
-        setNodes(attachRuntime(nextNodes));
-        setStatus("Canvas ready");
-      })
+    loadBoards()
+      .then((boardId) => loadCanvas(boardId))
       .catch((error) => setStatus(error.message));
-  }, [attachRuntime, setNodes]);
+  }, [loadBoards, loadCanvas]);
+
+  const switchBoard = useCallback(
+    async (boardId: string) => {
+      const response = await fetch("/api/boards", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "use", boardId })
+      });
+      const payload: { boards?: CanvasBoard[]; currentBoardId?: string; error?: string } = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not switch board");
+      setBoards(payload.boards ?? []);
+      const nextBoardId = payload.currentBoardId ?? boardId;
+      setCurrentBoardId(nextBoardId);
+      setBoardMenuOpen(false);
+      await loadCanvas(nextBoardId);
+    },
+    [loadCanvas]
+  );
+
+  const createBoard = useCallback(async () => {
+    const title = window.prompt("Board name");
+    if (!title?.trim()) return;
+    const response = await fetch("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", title })
+    });
+    const payload: { boards?: CanvasBoard[]; currentBoardId?: string; board?: CanvasBoard; error?: string } = await response.json();
+    if (!response.ok) {
+      setStatus(payload.error ?? "Could not create board");
+      return;
+    }
+    setBoards(payload.boards ?? []);
+    const nextBoardId = payload.currentBoardId ?? payload.board?.id ?? "main";
+    setCurrentBoardId(nextBoardId);
+    setBoardMenuOpen(false);
+    await loadCanvas(nextBoardId);
+  }, [loadCanvas]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -1502,6 +1578,7 @@ function CanvasApp() {
     const target = event.target instanceof Element ? event.target : null;
     const startsInContent = Boolean(
       target?.closest(".content-inspector, .canvas-toolbar, .path-bar, .react-flow__controls, .tiptap-body, textarea, input, .source-editor, .prompt-editor")
+        || target?.closest(".top-strip, .board-menu")
     );
     const owner = wheelOwnerRef.current ?? (startsInContent ? "content" : "canvas");
     wheelOwnerRef.current = owner;
@@ -1541,7 +1618,31 @@ function CanvasApp() {
         onDrop={onCanvasDrop}
         onWheelCapture={onCanvasWheelCapture}
       >
-        <CanvasToolbar onAddFiles={addFilesFromToolbar} onAddMarkdown={addMarkdownFromToolbar} />
+        <div className="top-strip">
+          <section className="board-switcher">
+            <button className="board-trigger" title="Switch board" onClick={() => setBoardMenuOpen((value) => !value)} aria-expanded={boardMenuOpen}>
+              <Layers3 size={16} />
+              <span>{currentBoard?.title ?? "Main"}</span>
+              <ChevronDown size={14} />
+            </button>
+            {boardMenuOpen ? (
+              <div className="board-menu">
+                <div className="board-list">
+                  {boards.map((board) => (
+                    <button key={board.id} className={board.id === currentBoardId ? "active" : ""} onClick={() => void switchBoard(board.id)}>
+                      <span>{board.title}</span>
+                    </button>
+                  ))}
+                </div>
+                <button className="board-create" onClick={() => void createBoard()}>
+                  <Plus size={14} />
+                  <span>New Board</span>
+                </button>
+              </div>
+            ) : null}
+          </section>
+          <CanvasToolbar onAddFiles={addFilesFromToolbar} onAddMarkdown={addMarkdownFromToolbar} />
+        </div>
         <button className="path-bar" title="Click to copy canvas folder path" onClick={copyBottomPath}>
           <span>{canvasFolderPath}</span>
         </button>

@@ -69,11 +69,19 @@ button {
   backdrop-filter: blur(10px);
 }
 
-.canvas-toolbar {
+.top-strip {
   position: absolute;
   top: 14px;
   left: 14px;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-toolbar,
+.board-switcher {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -86,6 +94,7 @@ button {
 }
 
 .canvas-toolbar button,
+.board-switcher button,
 .file-rail button,
 .selection-toolbar button {
   display: inline-flex;
@@ -104,6 +113,7 @@ button {
 }
 
 .canvas-toolbar button:hover,
+.board-switcher button:hover,
 .file-rail button:hover,
 .selection-toolbar button:hover {
   border-color: var(--line-strong);
@@ -112,6 +122,7 @@ button {
 }
 
 .canvas-toolbar svg,
+.board-switcher svg,
 .file-rail svg,
 .selection-toolbar svg {
   width: 18px;
@@ -119,7 +130,8 @@ button {
   flex: 0 0 18px;
 }
 
-.canvas-toolbar button {
+.canvas-toolbar button,
+.board-switcher button {
   width: auto;
   gap: 5px;
   padding: 0 10px;
@@ -127,19 +139,22 @@ button {
   font-size: 12px;
 }
 
-.canvas-toolbar button span {
+.canvas-toolbar button span,
+.board-switcher button span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.toolbar-trigger[aria-expanded="true"] {
+.toolbar-trigger[aria-expanded="true"],
+.board-trigger[aria-expanded="true"] {
   border-color: var(--line-strong);
   background: rgba(255, 255, 255, 0.62);
   color: var(--accent);
 }
 
-.toolbar-menu {
+.toolbar-menu,
+.board-menu {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -154,12 +169,39 @@ button {
   backdrop-filter: blur(12px);
 }
 
-.toolbar-menu button {
+.toolbar-menu button,
+.board-menu button {
   width: 100%;
   justify-content: flex-start;
   gap: 7px;
   padding: 0 9px;
   border-radius: 9px;
+}
+
+.board-trigger {
+  max-width: 220px;
+}
+
+.board-menu {
+  min-width: 190px;
+}
+
+.board-list {
+  display: grid;
+  max-height: 260px;
+  gap: 3px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.board-list button.active {
+  background: rgba(173, 90, 61, 0.1);
+  color: var(--accent);
+}
+
+.board-create {
+  margin-top: 4px;
+  border-top: 1px solid rgba(201, 184, 160, 0.52) !important;
 }
 
 .hidden-file-input {

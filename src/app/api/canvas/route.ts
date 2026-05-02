@@ -3,9 +3,10 @@ import { readCanvas, writeCanvas } from "@/lib/canvasStore";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    return NextResponse.json(await readCanvas());
+    const url = new URL(request.url);
+    return NextResponse.json(await readCanvas(url.searchParams.get("board") ?? undefined));
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
@@ -13,8 +14,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const url = new URL(request.url);
     const document = await request.json();
-    await writeCanvas(document);
+    await writeCanvas(document, url.searchParams.get("board") ?? undefined);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });

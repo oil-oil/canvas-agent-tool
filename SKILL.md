@@ -15,6 +15,7 @@ Use Mira from the workspace where `.canvas/` should live:
 
 ```bash
 mira init
+mira board create "<short task name>" --json
 mira status --json
 mira serve --port 3020
 ```
@@ -46,6 +47,7 @@ mira markdown "prompt draft" --json
 Collect context:
 
 ```bash
+mira board current --json
 mira list --json
 mira context <node-id>
 mira read <path>
@@ -58,4 +60,4 @@ mira read <path>
 mira write <path> "<new content>"
 ```
 
-Prefer JSON output for automation. Use `context all` only for small canvases. Preserve original images and videos unless the user explicitly asks to overwrite them.
+Prefer JSON output for automation. Create or switch to a board before importing files for a new user task, so unrelated topics do not share nodes. Use `context all` only for small boards. Preserve original images and videos unless the user explicitly asks to overwrite them.

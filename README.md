@@ -28,6 +28,7 @@ Once the skill is installed, an agent can install and launch the CLI from GitHub
 ```bash
 npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
 mira init
+mira board create "Homepage Redesign" --json
 mira import ~/Downloads/brief.md ~/Downloads/screenshot.png --json
 mira serve --port 3020
 ```
@@ -38,6 +39,9 @@ mira serve --port 3020
 mira init
 mira serve [--port 3020]
 mira status [--json]
+mira board list [--json]
+mira board create <title> [--json]
+mira board use <id> [--json]
 mira list [--json]
 mira files [--json]
 mira import <file...> [--json]

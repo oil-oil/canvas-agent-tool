@@ -25,30 +25,188 @@ export type CanvasDocument = {
   }>;
 };
 
+export type CanvasBoard = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CanvasState = {
+  currentBoardId: string;
+  boards: CanvasBoard[];
+};
+
 export const workspaceRoot = path.resolve(process.env.CANVAS_WORKSPACE ?? process.cwd());
 export const projectRoot = workspaceRoot;
 export const canvasRoot = path.join(workspaceRoot, ".canvas");
 export const filesRoot = path.join(canvasRoot, "files");
+export const boardsRoot = path.join(canvasRoot, "boards");
+export const stateFile = path.join(canvasRoot, "state.json");
 export const canvasFile = path.join(canvasRoot, "canvas.json");
+export const defaultBoardId = "main";
 
-export async function ensureCanvasFolders() {
-  await fs.mkdir(filesRoot, { recursive: true });
+const emptyCanvasDocument: CanvasDocument = { nodes: [], edges: [] };
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+export function safeBoardId(input: string) {
+  return (
+    input
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 72) || `board-${Date.now()}`
+  );
+}
+
+function boardPath(boardId: string) {
+  return path.join(boardsRoot, `${safeBoardId(boardId)}.json`);
+}
+
+async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   try {
-    await fs.access(canvasFile);
+    return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
   } catch {
-    await fs.writeFile(canvasFile, `${JSON.stringify({ nodes: [], edges: [] }, null, 2)}\n`, "utf8");
+    return fallback;
   }
 }
 
-export async function readCanvas(): Promise<CanvasDocument> {
-  await ensureCanvasFolders();
-  const raw = await fs.readFile(canvasFile, "utf8");
-  return JSON.parse(raw) as CanvasDocument;
+async function writeJsonFile(filePath: string, value: unknown) {
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-export async function writeCanvas(document: CanvasDocument) {
+async function readLegacyCanvas() {
+  return readJsonFile<CanvasDocument>(canvasFile, emptyCanvasDocument);
+}
+
+export async function ensureCanvasFolders() {
+  await fs.mkdir(filesRoot, { recursive: true });
+  await fs.mkdir(boardsRoot, { recursive: true });
+
+  let state = await readJsonFile<CanvasState | null>(stateFile, null);
+  const timestamp = nowIso();
+
+  if (!state || !Array.isArray(state.boards) || !state.boards.length) {
+    state = {
+      currentBoardId: defaultBoardId,
+      boards: [
+        {
+          id: defaultBoardId,
+          title: "Main",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
+      ]
+    };
+  }
+
+  if (!state.currentBoardId || !state.boards.some((board) => board.id === state.currentBoardId)) {
+    state.currentBoardId = state.boards[0]?.id ?? defaultBoardId;
+  }
+
+  for (const board of state.boards) {
+    try {
+      await fs.access(boardPath(board.id));
+    } catch {
+      const document = board.id === defaultBoardId ? await readLegacyCanvas() : emptyCanvasDocument;
+      await writeJsonFile(boardPath(board.id), document);
+    }
+  }
+
+  await writeJsonFile(stateFile, state);
+}
+
+export async function readCanvasState(): Promise<CanvasState> {
   await ensureCanvasFolders();
-  await fs.writeFile(canvasFile, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  return readJsonFile<CanvasState>(stateFile, {
+    currentBoardId: defaultBoardId,
+    boards: []
+  });
+}
+
+export async function writeCanvasState(state: CanvasState) {
+  await ensureCanvasFolders();
+  await writeJsonFile(stateFile, state);
+}
+
+export async function getCurrentBoard() {
+  const state = await readCanvasState();
+  return state.boards.find((board) => board.id === state.currentBoardId) ?? state.boards[0];
+}
+
+export async function listBoards() {
+  const state = await readCanvasState();
+  return {
+    boards: state.boards,
+    currentBoardId: state.currentBoardId
+  };
+}
+
+export async function setCurrentBoard(boardId: string) {
+  const state = await readCanvasState();
+  const normalized = safeBoardId(boardId);
+  const board = state.boards.find((item) => item.id === normalized);
+  if (!board) {
+    throw new Error(`No board found for ${boardId}`);
+  }
+  state.currentBoardId = board.id;
+  await writeJsonFile(stateFile, state);
+  return board;
+}
+
+export async function createBoard(titleInput: string) {
+  await ensureCanvasFolders();
+  const state = await readCanvasState();
+  const title = titleInput.trim() || `Board ${state.boards.length + 1}`;
+  const baseId = safeBoardId(title);
+  let id = baseId;
+  let index = 2;
+  while (state.boards.some((board) => board.id === id)) {
+    id = `${baseId}-${index}`;
+    index += 1;
+  }
+  const timestamp = nowIso();
+  const board: CanvasBoard = {
+    id,
+    title,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  state.boards.push(board);
+  state.currentBoardId = id;
+  await writeJsonFile(boardPath(id), emptyCanvasDocument);
+  await writeJsonFile(stateFile, state);
+  return board;
+}
+
+export async function readCanvas(boardId?: string): Promise<CanvasDocument> {
+  await ensureCanvasFolders();
+  const state = await readCanvasState();
+  const targetBoardId = safeBoardId(boardId ?? state.currentBoardId);
+  const board = state.boards.find((item) => item.id === targetBoardId);
+  if (!board) {
+    throw new Error(`No board found for ${boardId ?? targetBoardId}`);
+  }
+  return readJsonFile<CanvasDocument>(boardPath(board.id), emptyCanvasDocument);
+}
+
+export async function writeCanvas(document: CanvasDocument, boardId?: string) {
+  await ensureCanvasFolders();
+  const state = await readCanvasState();
+  const targetBoardId = safeBoardId(boardId ?? state.currentBoardId);
+  const board = state.boards.find((item) => item.id === targetBoardId);
+  if (!board) {
+    throw new Error(`No board found for ${boardId ?? targetBoardId}`);
+  }
+  const timestamp = nowIso();
+  board.updatedAt = timestamp;
+  await writeJsonFile(boardPath(board.id), document);
+  await writeJsonFile(stateFile, state);
 }
 
 export function resolveUserPath(userPath: string) {

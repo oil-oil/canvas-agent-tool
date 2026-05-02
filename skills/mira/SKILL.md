@@ -33,6 +33,7 @@ Run commands from the workspace where `.canvas/` should live:
 
 ```bash
 mira init
+mira board create "<short task name>" --json
 mira serve --port 3020
 ```
 
@@ -89,12 +90,13 @@ The UI also supports dragging supported files into the canvas. Treat CLI `import
 Use JSON output for automation:
 
 ```bash
+mira board current --json
 mira list --json
 mira context <node-id>
 mira read <path>
 ```
 
-Use `context all` only when the canvas is small. For large canvases, list nodes first, choose relevant node ids, then fetch context one by one.
+For each new user task, create or switch to a dedicated board before importing files. This keeps unrelated topics from leaking into `list`, `context all`, and the visible UI. Use `context all` only when the current board is small. For large boards, list nodes first, choose relevant node ids, then fetch context one by one.
 
 Expected context shape:
 
@@ -126,6 +128,7 @@ Mira only reads and writes files inside the workspace or paths already mapped th
 
 - Use `mira` as the command.
 - Start on port `3020` unless the user asks for another port.
+- Create a board for each distinct task or topic.
 - Use `import` for one-off files.
 - Use `link` plus `add` for folders the user wants to keep in place.
 - Create or edit Markdown nodes when the user asks to draft prompts.
