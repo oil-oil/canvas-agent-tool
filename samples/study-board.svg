@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
+  <rect width="960" height="600" fill="#f8f1e6"/>
+  <rect x="72" y="70" width="816" height="460" rx="10" fill="#fffaf1" stroke="#cfc2ae" stroke-width="3"/>
+  <path d="M150 170h250M150 220h360M150 270h300" stroke="#3b3832" stroke-width="18" stroke-linecap="round" opacity=".86"/>
+  <circle cx="700" cy="220" r="82" fill="#b85c38" opacity=".9"/>
+  <path d="M620 378c50-62 124-82 202-58" fill="none" stroke="#275f68" stroke-width="22" stroke-linecap="round"/>
+  <path d="M154 408h240" stroke="#7a8d4f" stroke-width="16" stroke-linecap="round"/>
+  <text x="150" y="475" fill="#4a463f" font-family="Georgia, serif" font-size="38">visual context canvas</text>
+</svg>

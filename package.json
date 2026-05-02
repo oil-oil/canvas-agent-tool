@@ -1,0 +1,74 @@
+{
+  "name": "canvas-agent-tool",
+  "version": "0.1.0",
+  "description": "Local-first visual canvas CLI for agents to preview Markdown, HTML, images, and videos.",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://github.com/oil-oil/canvas-agent-tool#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oil-oil/canvas-agent-tool.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oil-oil/canvas-agent-tool/issues"
+  },
+  "bin": {
+    "canvas-agent": "./bin/canvas.mjs",
+    "canvas": "./bin/canvas.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "samples",
+    "skills",
+    "next.config.ts",
+    "next-env.d.ts",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "keywords": [
+    "agent",
+    "canvas",
+    "cli",
+    "react-flow",
+    "markdown",
+    "html",
+    "preview"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.16.1",
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@tiptap/core": "3.22.5",
+    "@tiptap/extension-image": "3.22.5",
+    "@tiptap/react": "^3.22.5",
+    "@tiptap/starter-kit": "^3.22.5",
+    "@xyflow/react": "^12.9.2",
+    "lucide-react": "^0.468.0",
+    "marked": "^18.0.3",
+    "next": "^16.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.7.2"
+  }
+}
