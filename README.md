@@ -26,7 +26,7 @@ After installing the skill, ask your agent to use Mira when you want files previ
 Once the skill is installed, an agent can install and launch the CLI from GitHub:
 
 ```bash
-npm install -g github:oil-oil/mira
+npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
 mira init
 mira import ~/Downloads/brief.md ~/Downloads/screenshot.png --json
 mira serve --port 3020

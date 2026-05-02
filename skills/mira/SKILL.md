@@ -12,7 +12,7 @@ Use Mira when the user wants files to become visible context. Mira is local-firs
 If Mira is not installed, install it from GitHub:
 
 ```bash
-npm install -g github:oil-oil/mira
+npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
 ```
 
 Then verify:

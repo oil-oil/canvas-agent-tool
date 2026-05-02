@@ -8,7 +8,7 @@ description: Use this skill whenever the user wants an Agent to preview, organiz
 Install Mira from GitHub if needed:
 
 ```bash
-npm install -g github:oil-oil/mira
+npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
 ```
 
 Use Mira from the workspace where `.canvas/` should live:
