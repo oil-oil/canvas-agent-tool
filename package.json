@@ -62,13 +62,13 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "typescript": "^5.7.2",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "@types/turndown": "^5.0.6",
-    "typescript": "^5.7.2"
+    "@types/turndown": "^5.0.6"
   }
 }

@@ -53,6 +53,9 @@ importers:
       turndown:
         specifier: ^7.2.4
         version: 7.2.4
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -66,9 +69,6 @@ importers:
       '@types/turndown':
         specifier: ^5.0.6
         version: 5.0.6
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
 
 packages:
 
