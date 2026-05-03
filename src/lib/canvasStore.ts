@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
 export type CanvasNodeData = {
@@ -7,8 +8,21 @@ export type CanvasNodeData = {
   content?: string;
   sourceType: "markdown" | "html" | "image" | "video" | "prompt" | "file";
   summary?: string;
+  asset?: AssetMetadata;
   width?: number;
   height?: number;
+};
+
+export type AssetMetadata = {
+  format?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  title?: string;
+  words?: number;
+  description?: string;
+  updatedAt?: string;
 };
 
 export type CanvasDocument = {
@@ -50,18 +64,44 @@ export type CanvasComment = {
   updatedAt: string;
 };
 
-export const workspaceRoot = path.resolve(process.env.CANVAS_WORKSPACE ?? process.cwd());
-export const projectRoot = workspaceRoot;
-export const canvasRoot = path.join(workspaceRoot, ".canvas");
+export type TimelineEvent = {
+  id: string;
+  type: string;
+  boardId?: string;
+  text?: string;
+  path?: string;
+  nodeId?: string;
+  title?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+};
+
+function safeStorageName(input: string) {
+  return input.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-") || `workspace-${Date.now()}`;
+}
+
+export const sourceWorkspaceRoot = path.resolve(process.env.MIRA_SOURCE_WORKSPACE ?? process.env.CANVAS_WORKSPACE ?? process.cwd());
+export const workspaceRoot = sourceWorkspaceRoot;
+export const projectRoot = sourceWorkspaceRoot;
+export const miraHome = path.resolve(process.env.MIRA_HOME ?? path.join(os.homedir(), ".mira"));
+export const storageMode = process.env.MIRA_STORAGE ?? "home";
+export const localCanvasRoot = path.join(sourceWorkspaceRoot, ".canvas");
+export const canvasRoot = storageMode === "local" ? localCanvasRoot : miraHome;
 export const filesRoot = path.join(canvasRoot, "files");
 export const boardsRoot = path.join(canvasRoot, "boards");
+export const metaFile = path.join(canvasRoot, "meta.json");
+export const migrationFile = path.join(canvasRoot, "migration.json");
+export const backupsRoot = path.join(os.homedir(), ".mira-backups");
 export const stateFile = path.join(canvasRoot, "state.json");
 export const commentsFile = path.join(canvasRoot, "comments.json");
+export const timelineFile = path.join(canvasRoot, "timeline.json");
 export const canvasFile = path.join(canvasRoot, "canvas.json");
 export const defaultBoardId = "main";
 
 const emptyCanvasDocument: CanvasDocument = { nodes: [], edges: [] };
 const emptyCommentsDocument: { comments: CanvasComment[] } = { comments: [] };
+const emptyTimelineDocument: { events: TimelineEvent[] } = { events: [] };
+const migrationStartedAt = new Date().toISOString().replace(/[:.]/g, "-");
 
 function nowIso() {
   return new Date().toISOString();
@@ -95,13 +135,291 @@ async function writeJsonFile(filePath: string, value: unknown) {
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function imageSizeFromBuffer(buffer: Buffer, filePath: string) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png" && buffer.length >= 24 && buffer.toString("ascii", 1, 4) === "PNG") {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  if (ext === ".gif" && buffer.length >= 10 && buffer.toString("ascii", 0, 3) === "GIF") {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  if ((ext === ".jpg" || ext === ".jpeg") && buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset < buffer.length) {
+      if (buffer[offset] !== 0xff) break;
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+      }
+      offset += 2 + length;
+    }
+  }
+  if (ext === ".webp" && buffer.length >= 30 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+    const chunk = buffer.toString("ascii", 12, 16);
+    if (chunk === "VP8X" && buffer.length >= 30) {
+      return {
+        width: 1 + buffer.readUIntLE(24, 3),
+        height: 1 + buffer.readUIntLE(27, 3)
+      };
+    }
+    if (chunk === "VP8 " && buffer.length >= 30) {
+      return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+    }
+  }
+  return {};
+}
+
+function svgSizeFromText(text: string) {
+  const width = text.match(/\bwidth=["']?([0-9.]+)/i)?.[1];
+  const height = text.match(/\bheight=["']?([0-9.]+)/i)?.[1];
+  if (width && height) return { width: Math.round(Number(width)), height: Math.round(Number(height)) };
+  const viewBox = text.match(/\bviewBox=["'][^"']*?([0-9.]+)\s+([0-9.]+)["']/i);
+  if (viewBox) return { width: Math.round(Number(viewBox[1])), height: Math.round(Number(viewBox[2])) };
+  return {};
+}
+
+export async function getAssetMetadata(filePath: string): Promise<AssetMetadata> {
+  const stat = await fs.stat(filePath);
+  const ext = path.extname(filePath).toLowerCase().replace(".", "");
+  const sourceType = inferSourceType(filePath);
+  const metadata: AssetMetadata = {
+    format: ext || sourceType,
+    sizeBytes: stat.size,
+    updatedAt: stat.mtime.toISOString()
+  };
+
+  if (sourceType === "markdown") {
+    const text = await fs.readFile(filePath, "utf8").catch(() => "");
+    metadata.title = text.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    metadata.words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  } else if (sourceType === "html") {
+    const text = await fs.readFile(filePath, "utf8").catch(() => "");
+    metadata.title = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim();
+  } else if (sourceType === "image") {
+    if (ext === "svg") {
+      Object.assign(metadata, svgSizeFromText(await fs.readFile(filePath, "utf8").catch(() => "")));
+    } else {
+      Object.assign(metadata, imageSizeFromBuffer(await fs.readFile(filePath), filePath));
+    }
+  }
+
+  return metadata;
+}
+
 async function readLegacyCanvas() {
   return readJsonFile<CanvasDocument>(canvasFile, emptyCanvasDocument);
+}
+
+async function countCanvasNodes(root: string) {
+  const state = await readJsonFile<CanvasState | null>(path.join(root, "state.json"), null);
+  if (state?.boards?.length) {
+    let count = 0;
+    for (const board of state.boards) {
+      const document = await readJsonFile<CanvasDocument>(path.join(root, "boards", `${safeBoardId(board.id)}.json`), emptyCanvasDocument);
+      count += Array.isArray(document.nodes) ? document.nodes.length : 0;
+    }
+    return count;
+  }
+  const legacyDocument = await readJsonFile<CanvasDocument>(path.join(root, "canvas.json"), emptyCanvasDocument);
+  return Array.isArray(legacyDocument.nodes) ? legacyDocument.nodes.length : 0;
+}
+
+function remapPathValue(value: unknown, fromRoot: string, toRoot: string): unknown {
+  if (typeof value === "string") {
+    if (value === fromRoot || value.startsWith(`${fromRoot}${path.sep}`)) {
+      return path.join(toRoot, path.relative(fromRoot, value));
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => remapPathValue(item, fromRoot, toRoot));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remapPathValue(item, fromRoot, toRoot)]));
+  }
+  return value;
+}
+
+function remapBoardIdValue(value: unknown, boardIds: Map<string, string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => remapBoardIdValue(item, boardIds));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => {
+        if (key === "boardId" && typeof item === "string" && boardIds.has(item)) {
+          return [key, boardIds.get(item)];
+        }
+        return [key, remapBoardIdValue(item, boardIds)];
+      })
+    );
+  }
+  return value;
+}
+
+function uniqueBoardId(baseInput: string, usedIds: Set<string>) {
+  const base = safeBoardId(baseInput);
+  let id = base;
+  let index = 2;
+  while (usedIds.has(id)) {
+    id = `${base}-${index}`;
+    index += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+async function mergeLegacyStore(root: string, label: string, state: CanvasState, comments: { comments: CanvasComment[] }, timeline: { events: TimelineEvent[] }) {
+  const legacyState = await readJsonFile<CanvasState | null>(path.join(root, "state.json"), null);
+  if (!legacyState?.boards?.length) return false;
+
+  const usedIds = new Set(state.boards.map((board) => board.id));
+  const boardIds = new Map<string, string>();
+  const filesSourceRoot = path.join(root, "files");
+  const filesTargetRoot = path.join(filesRoot, "legacy", safeStorageName(label));
+  const hasFiles = await realpathIfExists(filesSourceRoot);
+  if (hasFiles) {
+    await copyLegacyFiles(filesSourceRoot, filesTargetRoot);
+  }
+
+  for (const board of legacyState.boards) {
+    const document = await readJsonFile<CanvasDocument>(path.join(root, "boards", `${safeBoardId(board.id)}.json`), emptyCanvasDocument);
+    const fallbackDocument = board.id === defaultBoardId ? await readJsonFile<CanvasDocument>(path.join(root, "canvas.json"), emptyCanvasDocument) : emptyCanvasDocument;
+    const sourceDocument = document.nodes?.length ? document : fallbackDocument;
+    const hasContent = Boolean(sourceDocument.nodes?.length || sourceDocument.edges?.length);
+    if (!hasContent && board.id === defaultBoardId && usedIds.has(defaultBoardId)) {
+      continue;
+    }
+
+    const nextId = usedIds.has(board.id) ? uniqueBoardId(`${safeStorageName(label)}-${board.id}`, usedIds) : uniqueBoardId(board.id, usedIds);
+    boardIds.set(board.id, nextId);
+    const nextTitle = nextId === board.id ? board.title : `${board.title} (${label})`;
+    state.boards.push({
+      ...board,
+      id: nextId,
+      title: nextTitle
+    });
+
+    const remappedDocument = remapPathValue(sourceDocument, filesSourceRoot, filesTargetRoot) as CanvasDocument;
+    await writeJsonFile(boardPath(nextId), remappedDocument);
+  }
+
+  if (!boardIds.size) return false;
+
+  const legacyComments = await readJsonFile<{ comments: CanvasComment[] }>(path.join(root, "comments.json"), emptyCommentsDocument);
+  const existingCommentIds = new Set(comments.comments.map((comment) => comment.id));
+  for (const legacyComment of legacyComments.comments ?? []) {
+    if (!boardIds.has(legacyComment.boardId)) continue;
+    const remapped = remapBoardIdValue(remapPathValue(legacyComment, filesSourceRoot, filesTargetRoot), boardIds) as CanvasComment;
+    if (existingCommentIds.has(remapped.id)) {
+      remapped.id = `${safeStorageName(label)}-${remapped.id}`;
+    }
+    existingCommentIds.add(remapped.id);
+    comments.comments.push(remapped);
+  }
+
+  const legacyTimeline = await readJsonFile<{ events: TimelineEvent[] }>(path.join(root, "timeline.json"), emptyTimelineDocument);
+  const existingEventIds = new Set(timeline.events.map((event) => event.id));
+  for (const legacyEvent of legacyTimeline.events ?? []) {
+    if (legacyEvent.boardId && !boardIds.has(legacyEvent.boardId)) continue;
+    const remapped = remapBoardIdValue(remapPathValue(legacyEvent, filesSourceRoot, filesTargetRoot), boardIds) as TimelineEvent;
+    if (existingEventIds.has(remapped.id)) {
+      remapped.id = `${safeStorageName(label)}-${remapped.id}`;
+    }
+    existingEventIds.add(remapped.id);
+    timeline.events.push(remapped);
+  }
+
+  return true;
+}
+
+async function copyLegacyFiles(sourceRoot: string, targetRoot: string) {
+  if (sourceRoot === targetRoot || targetRoot.startsWith(`${sourceRoot}${path.sep}`)) {
+    return;
+  }
+  await fs.mkdir(targetRoot, { recursive: true });
+  try {
+    await fs.cp(sourceRoot, targetRoot, { recursive: true, force: true, errorOnExist: false });
+    return;
+  } catch {
+    const entries = await fs.readdir(sourceRoot, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const source = path.join(sourceRoot, entry.name);
+      const target = path.join(targetRoot, entry.name);
+      await fs.cp(source, target, { recursive: true, force: true, errorOnExist: false }).catch(() => undefined);
+    }
+  }
+}
+
+async function backupMigrationSource(root: string, label: string) {
+  if (storageMode === "local") return undefined;
+  const backupRoot = path.join(backupsRoot, `global-migration-${migrationStartedAt}`, safeStorageName(label));
+  await fs.mkdir(backupRoot, { recursive: true });
+  for (const name of ["state.json", "canvas.json", "comments.json", "timeline.json", "meta.json"]) {
+    await fs.copyFile(path.join(root, name), path.join(backupRoot, name)).catch(() => undefined);
+  }
+  await fs.cp(path.join(root, "boards"), path.join(backupRoot, "boards"), { recursive: true, force: true }).catch(() => undefined);
+  await fs.cp(path.join(root, "files"), path.join(backupRoot, "files"), { recursive: true, force: true }).catch(() => undefined);
+  return backupRoot;
+}
+
+async function migrateLegacyStores(state: CanvasState) {
+  if (storageMode === "local") return state;
+  const migration = await readJsonFile<{ migratedStores?: string[]; backups?: Record<string, string> }>(migrationFile, { migratedStores: [], backups: {} });
+  const migratedStores = new Set(migration.migratedStores ?? []);
+  const backups = migration.backups ?? {};
+  const comments = await readJsonFile<{ comments: CanvasComment[] }>(commentsFile, emptyCommentsDocument);
+  const timeline = await readJsonFile<{ events: TimelineEvent[] }>(timelineFile, emptyTimelineDocument);
+  const candidates: Array<{ root: string; label: string }> = [];
+
+  if (!migratedStores.has(localCanvasRoot) && (await realpathIfExists(path.join(localCanvasRoot, "state.json")))) {
+    candidates.push({ root: localCanvasRoot, label: `local-${safeStorageName(path.basename(path.dirname(localCanvasRoot)))}` });
+  }
+
+  const sessionsRoot = path.join(miraHome, "sessions");
+  const sessions = await fs.readdir(sessionsRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of sessions) {
+    if (!entry.isDirectory()) continue;
+    const root = path.join(sessionsRoot, entry.name);
+    if (migratedStores.has(root)) continue;
+    candidates.push({ root, label: entry.name });
+  }
+
+  let changed = false;
+  for (const candidate of candidates) {
+    backups[candidate.root] ??= (await backupMigrationSource(candidate.root, candidate.label)) ?? "";
+    if (await mergeLegacyStore(candidate.root, candidate.label, state, comments, timeline)) {
+      migratedStores.add(candidate.root);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    if (!state.boards.some((board) => board.id === state.currentBoardId)) {
+      state.currentBoardId = state.boards[0]?.id ?? defaultBoardId;
+    }
+    await writeJsonFile(commentsFile, comments);
+    timeline.events = timeline.events.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-1000);
+    await writeJsonFile(timelineFile, timeline);
+    await writeJsonFile(migrationFile, { migratedStores: [...migratedStores], backups, updatedAt: nowIso() });
+  }
+
+  return state;
 }
 
 export async function ensureCanvasFolders() {
   await fs.mkdir(filesRoot, { recursive: true });
   await fs.mkdir(boardsRoot, { recursive: true });
+  const previousMeta = await readJsonFile<{ createdAt?: string } | null>(metaFile, null);
+  await writeJsonFile(metaFile, {
+    storageModel: storageMode === "local" ? "local" : "global",
+    storageMode,
+    sourceWorkspaceRoot,
+    appRoot: process.cwd(),
+    createdAt: previousMeta?.createdAt ?? nowIso(),
+    updatedAt: nowIso()
+  });
 
   let state = await readJsonFile<CanvasState | null>(stateFile, null);
   const timestamp = nowIso();
@@ -119,6 +437,8 @@ export async function ensureCanvasFolders() {
       ]
     };
   }
+
+  state = await migrateLegacyStores(state);
 
   if (!state.currentBoardId || !state.boards.some((board) => board.id === state.currentBoardId)) {
     state.currentBoardId = state.boards[0]?.id ?? defaultBoardId;
@@ -138,8 +458,41 @@ export async function ensureCanvasFolders() {
   } catch {
     await writeJsonFile(commentsFile, emptyCommentsDocument);
   }
+  try {
+    await fs.access(timelineFile);
+  } catch {
+    await writeJsonFile(timelineFile, emptyTimelineDocument);
+  }
 
   await writeJsonFile(stateFile, state);
+}
+
+export async function readTimeline() {
+  await ensureCanvasFolders();
+  return readJsonFile<{ events: TimelineEvent[] }>(timelineFile, emptyTimelineDocument);
+}
+
+export async function listTimeline(filters: { boardId?: string; limit?: number } = {}) {
+  const document = await readTimeline();
+  const events = document.events
+    .filter((event) => !filters.boardId || event.boardId === safeBoardId(filters.boardId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return typeof filters.limit === "number" && filters.limit > 0 ? events.slice(-filters.limit) : events;
+}
+
+export async function recordTimelineEvent(input: Omit<TimelineEvent, "id" | "createdAt">) {
+  const document = await readTimeline();
+  const event: TimelineEvent = {
+    id: `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: nowIso(),
+    ...input
+  };
+  document.events.push(event);
+  if (document.events.length > 1000) {
+    document.events = document.events.slice(-1000);
+  }
+  await writeJsonFile(timelineFile, document);
+  return event;
 }
 
 export async function readCanvasState(): Promise<CanvasState> {
@@ -177,6 +530,7 @@ export async function setCurrentBoard(boardId: string) {
   }
   state.currentBoardId = board.id;
   await writeJsonFile(stateFile, state);
+  await recordTimelineEvent({ type: "board.use", boardId: board.id, title: board.title });
   return board;
 }
 
@@ -202,6 +556,35 @@ export async function createBoard(titleInput: string) {
   state.currentBoardId = id;
   await writeJsonFile(boardPath(id), emptyCanvasDocument);
   await writeJsonFile(stateFile, state);
+  await recordTimelineEvent({ type: "board.create", boardId: board.id, title: board.title });
+  return board;
+}
+
+export async function deleteBoard(boardId: string) {
+  await ensureCanvasFolders();
+  const state = await readCanvasState();
+  const normalized = safeBoardId(boardId);
+  const board = state.boards.find((item) => item.id === normalized);
+  if (!board) {
+    throw new Error(`No board found for ${boardId}`);
+  }
+  if (state.boards.length <= 1) {
+    throw new Error("Keep at least one board.");
+  }
+
+  state.boards = state.boards.filter((item) => item.id !== board.id);
+  if (state.currentBoardId === board.id) {
+    state.currentBoardId = state.boards[0]?.id ?? defaultBoardId;
+  }
+
+  await fs.rm(boardPath(board.id), { force: true });
+
+  const comments = await readJsonFile<{ comments: CanvasComment[] }>(commentsFile, emptyCommentsDocument);
+  comments.comments = comments.comments.filter((comment) => comment.boardId !== board.id);
+  await writeJsonFile(commentsFile, comments);
+
+  await writeJsonFile(stateFile, state);
+  await recordTimelineEvent({ type: "board.delete", boardId: board.id, title: board.title });
   return board;
 }
 
@@ -228,6 +611,7 @@ export async function writeCanvas(document: CanvasDocument, boardId?: string) {
   board.updatedAt = timestamp;
   await writeJsonFile(boardPath(board.id), document);
   await writeJsonFile(stateFile, state);
+  return board;
 }
 
 export async function readComments() {
@@ -286,6 +670,15 @@ export async function createComment(input: {
   };
   document.comments.push(comment);
   await writeJsonFile(commentsFile, document);
+  await recordTimelineEvent({
+    type: "comment.create",
+    boardId,
+    nodeId: comment.nodeId,
+    path: comment.path,
+    title: comment.title,
+    text: comment.comment,
+    details: { quote: comment.quote }
+  });
   return comment;
 }
 
@@ -298,6 +691,7 @@ export async function resolveComment(commentId: string) {
   comment.status = "resolved";
   comment.updatedAt = nowIso();
   await writeJsonFile(commentsFile, document);
+  await recordTimelineEvent({ type: "comment.resolve", boardId: comment.boardId, nodeId: comment.nodeId, path: comment.path, title: comment.title, text: comment.comment });
   return comment;
 }
 
@@ -344,7 +738,7 @@ export async function isAllowedPath(targetPath: string) {
 export async function assertAllowedPath(targetPath: string) {
   const resolved = resolveUserPath(targetPath);
   if (!(await isAllowedPath(resolved))) {
-    throw new Error("This path has not been added to the canvas directory. Import it through a symlink first.");
+    throw new Error("This path has not been added to Mira. Import it or map it through a symlink first.");
   }
   return resolved;
 }

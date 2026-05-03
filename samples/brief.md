@@ -7,7 +7,7 @@ This canvas service turns files into movable visual nodes with copyable context.
 - Markdown can be edited in the right-side preview panel and written back to source files.
 - HTML, images, and videos can be previewed directly in the canvas and opened in the right-side preview panel.
 - Prompt nodes can reference nearby materials to organize input for AI.
-- Files are managed through `.canvas/files`, with support for symlinks to external folders.
+- Files are managed inside the active Mira session under `~/.mira`, with support for symlinks to external folders.
 
 ## Draft Agent Workflow
 

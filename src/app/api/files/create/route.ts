@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
-import { filesRoot, inferSourceType } from "@/lib/canvasStore";
+import { filesRoot, getAssetMetadata, getCurrentBoard, inferSourceType, recordTimelineEvent } from "@/lib/canvasStore";
 
 export const runtime = "nodejs";
 
@@ -27,12 +27,16 @@ export async function POST() {
     await fs.mkdir(notesRoot, { recursive: true });
     const targetPath = await uniquePath(notesRoot, `untitled-${Date.now()}.md`);
     await fs.writeFile(targetPath, "", "utf8");
+    const asset = await getAssetMetadata(targetPath);
+    const board = await getCurrentBoard();
+    await recordTimelineEvent({ type: "markdown.create", boardId: board?.id, path: targetPath, title: path.basename(targetPath) });
 
     return NextResponse.json({
       ok: true,
       title: path.basename(targetPath),
       path: targetPath,
-      sourceType: inferSourceType(targetPath)
+      sourceType: inferSourceType(targetPath),
+      asset
     });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });

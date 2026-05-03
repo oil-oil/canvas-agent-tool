@@ -16,8 +16,8 @@ export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
     const document = await request.json();
-    await writeCanvas(document, url.searchParams.get("board") ?? undefined);
-    return NextResponse.json({ ok: true });
+    const board = await writeCanvas(document, url.searchParams.get("board") ?? undefined);
+    return NextResponse.json({ ok: true, board });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }

@@ -55,6 +55,7 @@
     "@tiptap/react": "^3.22.5",
     "@tiptap/starter-kit": "^3.22.5",
     "@xyflow/react": "^12.9.2",
+    "chokidar": "^5.0.0",
     "lucide-react": "^0.468.0",
     "marked": "^18.0.3",
     "next": "^16.0.1",
@@ -62,8 +63,8 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "typescript": "^5.7.2",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "typescript": "^5.7.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

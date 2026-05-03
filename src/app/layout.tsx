@@ -4,7 +4,11 @@ import "@xyflow/react/dist/style.css";
 
 export const metadata: Metadata = {
   title: "Mira",
-  description: "A local visual context canvas for files and prompts."
+  description: "A local visual context canvas for files and prompts.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png"
+  }
 };
 
 export default function RootLayout({
@@ -13,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

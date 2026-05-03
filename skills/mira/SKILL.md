@@ -1,50 +1,98 @@
 ---
 name: mira
-description: Use this skill whenever the user wants an Agent to preview, organize, or collect context from local Markdown, HTML, image, or video files on Mira, a visual canvas. Trigger for requests mentioning Mira, canvas workspace, visual context board, React Flow preview, local files as nodes, prompt writing with files, copying context for AI, dragging files into a canvas, linking folders into .canvas/files, or opening a local preview service.
+description: Use this skill whenever an Agent needs a visual workspace for local Markdown, HTML, images, or videos. Trigger proactively when a task involves previewing images or videos, comparing multiple documents or generated outputs, organizing context across multiple turns, reviewing HTML made from documents, drafting prompts with file references, collecting visual evidence for AI, reading Markdown comments, or keeping task-specific files on a canvas. Also trigger when the user mentions Mira, canvas, visual context, local preview, file nodes, boards, comments, or copying context.
 ---
 
 # Mira
 
-Use Mira when the user wants files to become visible context. Mira is local-first: the installed app provides the CLI and UI, while the current workspace stores layout and files under `.canvas/`.
+Mira turns local files into visible Agent context. It has one global home:
 
-## First Try Mira
+```txt
+~/.mira/
+```
 
-Start by trying the CLI from the workspace where `.canvas/` should live:
+Use boards to separate tasks and topics. Do not create separate Mira homes or rely on project-derived sessions.
+
+## When To Use Mira
+
+Use Mira when seeing files together helps the task:
+
+- Preview Markdown, HTML, images, or videos.
+- Compare documents, screenshots, generated HTML, or media assets.
+- Keep visual context across a multi-turn task.
+- Draft prompts that reference local files.
+- Review Markdown comments and connect them to source text.
+- Preserve useful media descriptions for future Agents.
+
+## First Step
+
+Call Mira first. Do not pre-check installation separately:
 
 ```bash
 mira status --json
 ```
 
-If the command is missing, install it from GitHub, then retry:
+If the command fails because Mira is missing, install it and retry:
 
 ```bash
 npm install -g https://github.com/oil-oil/mira/archive/refs/heads/main.tar.gz
 mira status --json
 ```
 
-If the repository is already checked out, use the local bin:
+Run `mira migrate --json` after installing or after major upgrades. It migrates older stores into the global `~/.mira` home and reports backup paths.
 
-```bash
-node ./bin/mira.mjs status --json
-```
+## Start Or Reuse The Canvas
 
-## Start The Canvas
-
-Run commands from the workspace where `.canvas/` should live:
+Use port `3020` by default:
 
 ```bash
 mira init
-mira board create "<short task name>" --json
 mira serve --port 3020
 ```
 
-The default UI is:
+If the service is already running, reuse it. The UI is:
 
 ```txt
 http://localhost:3020
 ```
 
-`mira serve` starts the Next.js app and passes `CANVAS_WORKSPACE=<current directory>`, so the UI reads and writes the right workspace.
+## Board Discipline
+
+Create one board per distinct task:
+
+```bash
+mira board create "<short task name>" --json
+```
+
+For multi-step or batch work, capture the returned `board.id` and pass it explicitly:
+
+```bash
+mira add --board <board-id> <file...> --json
+mira import --board <board-id> <file...> --json
+mira markdown --board <board-id> "prompt draft" --json
+mira list --board <board-id> --json
+mira context --board <board-id> all
+```
+
+This prevents another Agent from changing your CLI target board underneath you.
+
+Use `mira board use <board-id>` only when you intentionally want to change the CLI default target. The browser UI keeps its own visible board, so CLI operations should not depend on what the user is currently viewing.
+
+Delete a board only when the user clearly asks for it:
+
+```bash
+mira board delete <board-id> --confirm --json
+```
+
+Mira keeps at least one board. Deleting a board removes its board file and comments for that board.
+
+Remove nodes with the CLI instead of editing board JSON by hand:
+
+```bash
+mira remove --board <board-id> <node-id...> --json
+```
+
+This updates board metadata and lets the browser refresh the visible board reliably.
 
 ## Supported Preview Files
 
@@ -59,32 +107,34 @@ For PDF, spreadsheets, archives, or unknown files, explain that Mira currently p
 
 ## Put Files On The Canvas
 
-Copy one-off files into the canvas:
+Copy one-off files into Mira:
 
 ```bash
-mira import ~/Downloads/brief.md ~/Downloads/mockup.png --json
+mira import --board <board-id> ~/Downloads/brief.md ~/Downloads/mockup.png --json
 ```
 
 Map a folder through a symlink:
 
 ```bash
-mira link ~/Downloads downloads --json
+mira link --board <board-id> ~/Downloads downloads --json
 mira files --json
 ```
 
 After linking, add specific supported files without copying originals:
 
 ```bash
-mira add .canvas/files/downloads/example.png --json
+mira add --board <board-id> ~/.mira/files/downloads/example.png --json
 ```
 
 Create a blank Markdown prompt note:
 
 ```bash
-mira markdown "prompt draft" --json
+mira markdown --board <board-id> "prompt draft" --json
 ```
 
-The UI also supports dragging supported files into the canvas. Treat CLI `import` as the same behavior: copy into `.canvas/files/drops`, then add nodes.
+The UI also supports dragging supported files into the canvas. Treat CLI `import` as the same behavior: copy into the Mira files directory, then add nodes.
+
+Batch `add` and `import` operations are arranged by file type automatically, using the same spacing rules as the UI smart layout.
 
 ## Get Context For AI
 
@@ -92,24 +142,28 @@ Use JSON output for automation:
 
 ```bash
 mira board current --json
-mira list --json
-mira comments list --json
-mira context <node-id>
+mira list --board <board-id> --json
+mira comments list --board <board-id> --json
+mira timeline --board <board-id> --json --limit 20
+mira context --board <board-id> <node-id>
 mira read <path>
 ```
 
-For each new user task, create or switch to a dedicated board before importing files. This keeps unrelated topics from leaking into `list`, `context all`, and the visible UI. Markdown comments are stored in `.canvas/comments.json`; use `mira comments list --json`, `mira comments node <node-id> --json`, or `mira comments file <path> --json` when the user asks about comments. Use `context all` only when the current board is small. For large boards, list nodes first, choose relevant node ids, then fetch context one by one.
+Use `context all` only when the current board is small. For large boards, list nodes first, choose relevant node ids, then fetch context one by one.
 
 Expected context shape:
 
 ```txt
 # Canvas Context
 
+board_id:
+board_title:
 node_id:
 type:
 title:
 path:
 summary:
+asset:
 
 ## Content
 Exact text when useful. For images and videos, include the file path and relevant visible details requested by the user.
@@ -127,14 +181,46 @@ mira read <path>
 mira write <path> "<new content>"
 ```
 
-Mira only reads and writes files inside the workspace or paths already mapped through `.canvas/files` symlinks. Preserve original images and videos unless the user explicitly asks to overwrite them.
+Mira reads and writes files inside the project, copied Mira files, and paths mapped through the Mira files directory. Preserve original images and videos unless the user explicitly asks to overwrite them.
+
+## Asset Metadata And Timeline
+
+Mira stores lightweight asset metadata on nodes when files are imported or created: format, file size, image dimensions when easy to detect, Markdown word count, and HTML title.
+
+If an Agent has inspected an image or video and learned something useful, store that reusable description:
+
+```bash
+mira describe --board <board-id> <node-id> "Short visual description useful for future Agents." --json
+```
+
+Use Timeline for task memory, not full chat transcripts:
+
+```bash
+mira note --board <board-id> "User wants the preview drawer to stay visually minimal." --json
+mira timeline --board <board-id> --json --limit 20
+```
+
+## Sync Model
+
+Mira writes to disk first, then the running service watches `~/.mira` and pushes browser updates through `/api/events`. If the UI looks stale:
+
+```bash
+mira status --json
+mira migrate --json
+curl -s http://localhost:3020/api/status
+```
+
+The CLI and browser should both report `canvasRoot` as `~/.mira`, with no `sessionId`.
 
 ## Practical Defaults
 
 - Use `mira` as the command.
-- Start on port `3020` unless the user asks for another port.
-- Create a board for each distinct task or topic.
+- Use the single global home `~/.mira`.
+- Start or reuse port `3020`.
+- Create a board for each distinct task.
+- Pass `--board <board-id>` for batch or multi-step operations.
 - Use `import` for one-off files.
 - Use `link` plus `add` for folders the user wants to keep in place.
-- Create or edit Markdown nodes when the user asks to draft prompts.
-- Read source files when exact text matters; do not rely only on visual preview.
+- Use `mira note` for important user decisions and preferences.
+- Use `mira describe` after inspecting media when the description will save future visual analysis.
+- Read source files when exact text matters; use the visual canvas for orientation and comparison.

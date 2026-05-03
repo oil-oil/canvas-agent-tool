@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
-import { filesRoot, inferSourceType, isRenderableSourceType } from "@/lib/canvasStore";
+import { filesRoot, getAssetMetadata, getCurrentBoard, inferSourceType, isRenderableSourceType, recordTimelineEvent } from "@/lib/canvasStore";
 
 export const runtime = "nodejs";
 
@@ -43,12 +43,16 @@ export async function POST(request: Request) {
     const targetPath = await uniquePath(dropsRoot, file.name);
     const buffer = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(targetPath, buffer);
+    const asset = await getAssetMetadata(targetPath);
+    const board = await getCurrentBoard();
+    await recordTimelineEvent({ type: "file.upload", boardId: board?.id, path: targetPath, title: path.basename(targetPath), details: { sourceType, sizeBytes: asset.sizeBytes } });
 
     return NextResponse.json({
       ok: true,
       title: path.basename(targetPath),
       path: targetPath,
-      sourceType
+      sourceType,
+      asset
     });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });

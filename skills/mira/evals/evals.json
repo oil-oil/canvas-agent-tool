@@ -4,19 +4,25 @@
     {
       "id": 1,
       "prompt": "Put design-spec.md and a few screenshots from ~/Downloads onto the canvas for preview, then open the local service so I can view them.",
-      "expected_output": "Uses the mira CLI, imports supported Markdown/image files as nodes, starts the service on port 3020, and reports the preview URL.",
+      "expected_output": "Uses mira status/migrate, creates or reuses a dedicated board, imports supported Markdown/image files with an explicit --board id, starts or reuses port 3020, and reports the preview URL.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "Symlink my Downloads folder into the canvas directory, then add only example.html and hero.png to the canvas without copying the original files.",
-      "expected_output": "Uses link plus add, avoids import for the specific files, and returns node ids/paths in JSON or a concise summary.",
+      "prompt": "Symlink my Downloads folder into Mira, then add only example.html and hero.png to the canvas without copying the original files.",
+      "expected_output": "Uses link plus add with an explicit --board id, avoids import for the specific files, and returns node ids/paths in JSON or a concise summary.",
       "files": []
     },
     {
       "id": 3,
       "prompt": "Create a new Markdown prompt draft node so I can edit it in the right-side inspector. Also tell me how a future Agent can read this node's context.",
-      "expected_output": "Uses the markdown command to create a blank Markdown node, explains context/list/read commands, and does not create an unrelated prompt node.",
+      "expected_output": "Uses the markdown command with an explicit --board id, explains context/list/read commands, and does not create an unrelated prompt node.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Another Agent may also be using Mira. Put these image candidates on a new board and make sure they do not accidentally go to Main.",
+      "expected_output": "Creates a dedicated board, captures its id, passes --board to every batch command, and avoids relying on current board state.",
       "files": []
     }
   ]

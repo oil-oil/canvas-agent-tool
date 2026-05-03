@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createBoard, listBoards, setCurrentBoard } from "@/lib/canvasStore";
+import { createBoard, deleteBoard, listBoards, setCurrentBoard } from "@/lib/canvasStore";
 
 export const runtime = "nodejs";
 
@@ -21,6 +21,11 @@ export async function POST(request: Request) {
 
     if (payload?.action === "use") {
       const board = await setCurrentBoard(String(payload.boardId ?? ""));
+      return NextResponse.json({ board, ...(await listBoards()) });
+    }
+
+    if (payload?.action === "delete") {
+      const board = await deleteBoard(String(payload.boardId ?? ""));
       return NextResponse.json({ board, ...(await listBoards()) });
     }
 

@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
-import { filesRoot, resolveUserPath } from "@/lib/canvasStore";
+import { filesRoot, getCurrentBoard, recordTimelineEvent, resolveUserPath } from "@/lib/canvasStore";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,8 @@ export async function POST(request: Request) {
     const linkName = safeName(body.name || path.basename(target));
     const linkPath = path.join(filesRoot, linkName);
     await fs.symlink(target, linkPath);
+    const board = await getCurrentBoard();
+    await recordTimelineEvent({ type: "file.link", boardId: board?.id, path: linkPath, title: linkName, details: { target } });
 
     return NextResponse.json({ ok: true, linkPath, target });
   } catch (error) {
